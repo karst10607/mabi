@@ -1,0 +1,39 @@
+{
+  "name": "aurapet-desktop",
+  "version": "1.0.0",
+  "description": "Cross-platform AI Desktop Pet & Companion (ChatGPT-style floating assistant)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "keywords": [
+    "desktop-pet",
+    "electron",
+    "ai-companion",
+    "chatgpt",
+    "cross-platform"
+  ],
+  "author": "Antigravity",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.2.1"
+  },
+  "build": {
+    "appId": "com.antigravity.aurapet",
+    "productName": "AuraPet",
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "target": ["nsis", "portable"]
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Utility"
+    }
+  }
+}

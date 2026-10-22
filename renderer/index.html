@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AuraPet - AI 桌面寵物</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body class="theme-dark">
+
+  <!-- ================= PET MODE CONTAINER ================= -->
+  <div id="pet-container" class="pet-mode-active">
+    
+    <!-- Top Mini Utility Bar -->
+    <div class="pet-topbar drag-region">
+      <div class="pet-badge no-drag" id="pet-name-badge">Lumi ✦</div>
+      <div class="pet-top-actions no-drag">
+        <button id="btn-expand-chat" class="icon-btn" title="展開 ChatGPT 對話視窗 (Option+Space)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+        </button>
+        <button id="btn-quick-settings" class="icon-btn" title="偏好設定">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+        <button id="btn-minimize-pet" class="icon-btn" title="最小化">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Dynamic Speech Bubble -->
+    <div id="speech-bubble" class="speech-bubble hidden no-drag">
+      <div id="speech-text" class="speech-content">嗨！我是你的桌面小夥伴～</div>
+      <div class="speech-tail"></div>
+    </div>
+
+    <!-- Pet Graphic & Interactive Area -->
+    <div id="pet-stage" class="pet-stage drag-region">
+      <!-- Pet Avatar rendered via dynamic SVG -->
+      <div id="pet-avatar-wrapper" class="pet-avatar-wrapper no-drag">
+        <div id="pet-graphic" class="pet-graphic">
+          <!-- Injected dynamically by pet.js -->
+        </div>
+        <!-- Shadow beneath the pet -->
+        <div class="pet-shadow"></div>
+      </div>
+
+      <!-- Floating Hearts & Sparkles Particles Layer -->
+      <div id="particles-layer" class="particles-layer"></div>
+    </div>
+
+    <!-- Quick Pet Status & Mini Dock -->
+    <div class="pet-dock no-drag">
+      <div class="pet-stats">
+        <div class="stat-pill" title="親密度 (點擊寵物互動)">
+          <span class="stat-icon">❤️</span>
+          <span id="stat-affection" class="stat-val">88</span>
+        </div>
+        <div class="stat-pill" title="能量值 (定時餵食補給)">
+          <span class="stat-icon">⚡</span>
+          <span id="stat-energy" class="stat-val">95</span>
+        </div>
+      </div>
+      <div class="pet-action-buttons">
+        <button id="btn-pet-pat" class="dock-btn" title="摸摸頭 (+親密)">
+          <span class="dock-icon">👋</span>
+        </button>
+        <button id="btn-pet-feed" class="dock-btn" title="餵小壽司 (+能量)">
+          <span class="dock-icon">🍣</span>
+        </button>
+        <button id="btn-pet-play" class="dock-btn" title="拋球玩耍">
+          <span class="dock-icon">🎾</span>
+        </button>
+        <button id="btn-pet-chat" class="dock-btn dock-btn-primary" title="喚起 AI 對話 (Option+Space)">
+          <span class="dock-icon">💬</span>
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ================= CHAT MODE CONTAINER (ChatGPT-Style Window) ================= -->
+  <div id="chat-container" class="chat-container hidden">
+
+    <!-- Chat Header Window Bar -->
+    <div class="chat-header drag-region">
+      <div class="chat-header-left no-drag">
+        <!-- Mini Pet Status Avatar -->
+        <div class="mini-pet-avatar" id="mini-pet-badge" title="回到寵物形態">
+          <div class="mini-pet-indicator status-online"></div>
+          <span id="mini-pet-icon">🦊</span>
+        </div>
+        <div class="chat-title-group">
+          <div class="chat-title">
+            <span id="chat-pet-title">AuraPet</span>
+            <span class="model-badge" id="current-model-badge">⚡ GPT-4o mini</span>
+          </div>
+          <div class="chat-subtitle" id="chat-pet-status-text">Ready to help you</div>
+        </div>
+      </div>
+
+      <div class="chat-header-right no-drag">
+        <button id="btn-collapse-to-pet" class="icon-btn" title="縮小回桌面寵物形態">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 14 10 14 10 20"></polyline>
+            <polyline points="20 10 14 10 14 4"></polyline>
+            <line x1="14" y1="10" x2="21" y2="3"></line>
+            <line x1="3" y1="21" x2="10" y2="14"></line>
+          </svg>
+        </button>
+        <button id="btn-chat-settings" class="icon-btn" title="AI 模型與設定">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+        <button id="btn-pin-window" class="icon-btn active" title="置頂顯示">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="17" x2="12" y2="22"></line>
+            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17z"></path>
+          </svg>
+        </button>
+        <button id="btn-close-app" class="icon-btn btn-danger" title="關閉">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Quick Prompt Pills Carousel / Row -->
+    <div class="prompts-bar no-drag" id="prompts-bar">
+      <button class="prompt-pill" data-prompt="請用精簡專業的繁體中文幫我潤色以下文字：">✨ 文字潤色</button>
+      <button class="prompt-pill" data-prompt="請幫我快速總結這段內容的 3 個核心重點：">📝 核心總結</button>
+      <button class="prompt-pill" data-prompt="請幫我檢查這段代碼是否有潛在 bug 或性能問題：">💻 檢查代碼</button>
+      <button class="prompt-pill" data-prompt="請寫一則親切有禮的商務回覆信件：">✉️ 商務郵件</button>
+      <button class="prompt-pill" data-prompt="陪我聊聊天，給我一點工作或學習上的靈感與元氣！">☕ 陪我聊聊</button>
+    </div>
+
+    <!-- Messages Container -->
+    <div class="chat-messages no-drag" id="chat-messages">
+      <!-- Welcome Message -->
+      <div class="message assistant">
+        <div class="message-avatar">🦊</div>
+        <div class="message-body">
+          <div class="message-content">
+            <p>你好呀！我是你的 AI 桌面寵物夥伴 <strong>Lumi</strong> 🐾</p>
+            <p>我可以隨時解答疑問、寫代碼、潤色文章，或是在你工作累時陪你放鬆片刻。需要我的時候隨時按 <code>Option+Space</code> 喚醒我哦！</p>
+          </div>
+          <div class="message-meta">剛剛</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat Input Area -->
+    <div class="chat-input-wrapper no-drag">
+      <div class="chat-input-box">
+        <textarea id="chat-textarea" placeholder="輸入問題或訊息... (Enter 發送，Shift+Enter 換行)" rows="1"></textarea>
+        <div class="input-actions">
+          <button id="btn-clear-chat" class="input-action-btn" title="清空對話">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+          <button id="btn-send-message" class="send-btn" title="發送訊息">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="chat-footer-tips">
+        <span>按 <code>Esc</code> 或點擊頂部圖示返回寵物形態</span>
+        <span id="current-endpoint-display">內建智慧模式 (無須 API Key)</span>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ================= SETTINGS MODAL ================= -->
+  <div id="settings-modal" class="modal-overlay hidden no-drag">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span class="modal-icon">⚙️</span>
+          <span>AuraPet 設定與 AI 模型配置</span>
+        </div>
+        <button id="btn-close-settings" class="icon-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        
+        <!-- Tab Navigation -->
+        <div class="settings-tabs">
+          <button class="tab-btn active" data-tab="tab-ai">🤖 AI 模型設定</button>
+          <button class="tab-btn" data-tab="tab-pet">🐾 寵物外觀與個性</button>
+          <button class="tab-btn" data-tab="tab-system">🖥️ 系統與快捷鍵</button>
+        </div>
+
+        <!-- Tab 1: AI Configuration -->
+        <div id="tab-ai" class="tab-content active">
+          <div class="form-group">
+            <label for="select-ai-provider">AI 服務供應商 (Provider)</label>
+            <select id="select-ai-provider" class="form-control">
+              <option value="builtin">✦ 內建陪伴模式 (智慧對話，免 API Key)</option>
+              <option value="openai">OpenAI (ChatGPT / GPT-4o / GPT-4o-mini)</option>
+              <option value="gemini">Google Gemini (Gemini 2.0 / 1.5 Flash)</option>
+              <option value="claude">Anthropic Claude (Claude 3.5 Sonnet)</option>
+              <option value="ollama">Ollama (本機完全離線大模型)</option>
+              <option value="custom">自定義相容端點 (DeepSeek / Moonshot / 其他)</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="group-api-key">
+            <label for="input-api-key">API Key</label>
+            <div class="input-with-toggle">
+              <input type="password" id="input-api-key" class="form-control" placeholder="sk-..." autocomplete="off">
+              <button type="button" id="btn-toggle-key-visibility" class="mini-toggle-btn">👁️</button>
+            </div>
+            <span class="field-hint">僅儲存於您本機設備的 LocalStorage，安全絕不外洩。</span>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-1" id="group-base-url">
+              <label for="input-base-url">API Base URL</label>
+              <input type="text" id="input-base-url" class="form-control" placeholder="https://api.openai.com/v1">
+            </div>
+            <div class="form-group flex-1" id="group-model-name">
+              <label for="input-model-name">模型代號 (Model ID)</label>
+              <input type="text" id="input-model-name" class="form-control" placeholder="gpt-4o-mini">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="input-system-prompt">系統人格提示詞 (System Prompt)</label>
+            <textarea id="input-system-prompt" class="form-control" rows="2" placeholder="你是一隻住在桌面上的可愛 AI 靈動寵物..."></textarea>
+          </div>
+        </div>
+
+        <!-- Tab 2: Pet Appearance & Personality -->
+        <div id="tab-pet" class="tab-content">
+          <div class="form-group">
+            <label>選擇寵物夥伴形象</label>
+            <div class="pet-skin-selector">
+              <label class="skin-card">
+                <input type="radio" name="petSkin" value="kitsune" checked>
+                <div class="skin-box">
+                  <div class="skin-emoji">🦊</div>
+                  <div class="skin-name">Lumi 賽博靈狐</div>
+                  <div class="skin-desc">靈動機靈・科技霓虹</div>
+                </div>
+              </label>
+
+              <label class="skin-card">
+                <input type="radio" name="petSkin" value="shiba">
+                <div class="skin-box">
+                  <div class="skin-emoji">🐕</div>
+                  <div class="skin-name">Koma 柴犬寶貝</div>
+                  <div class="skin-desc">治癒溫暖・元氣滿滿</div>
+                </div>
+              </label>
+
+              <label class="skin-card">
+                <input type="radio" name="petSkin" value="cat">
+                <div class="skin-box">
+                  <div class="skin-emoji">🐱</div>
+                  <div class="skin-name">Luna 霓虹喵喵</div>
+                  <div class="skin-desc">優雅傲嬌・陪伴傾聽</div>
+                </div>
+              </label>
+
+              <label class="skin-card">
+                <input type="radio" name="petSkin" value="custom_photo">
+                <div class="skin-box skin-box-custom">
+                  <div class="skin-emoji" id="custom-skin-preview-emoji">📸</div>
+                  <div class="skin-name">真實寵物建模</div>
+                  <div class="skin-desc">上傳自家毛小孩照片</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Real Pet Photo Upload & Customization Section -->
+          <div id="section-custom-photo" class="custom-photo-section">
+            <div class="photo-upload-zone" id="photo-drop-zone">
+              <input type="file" id="input-pet-photo" accept="image/*" class="file-input-hidden">
+              <div class="upload-placeholder" id="upload-placeholder">
+                <span class="upload-icon">📷</span>
+                <span class="upload-title">點擊或拖放寵物真實照片</span>
+                <span class="upload-subtitle">支援 JPG、PNG、WebP，將自動進行智慧邊緣柔化與動態建模</span>
+              </div>
+              <div class="photo-preview-container hidden" id="photo-preview-container">
+                <img id="photo-preview-img" class="photo-preview-img" alt="寵物預覽">
+                <button type="button" id="btn-remove-photo" class="btn-remove-photo" title="更換照片">✕</button>
+              </div>
+            </div>
+
+            <div class="form-row" style="margin-top: 10px;">
+              <div class="form-group flex-1">
+                <label for="select-photo-frame">懸浮輪廓風格</label>
+                <select id="select-photo-frame" class="form-control">
+                  <option value="aura-contour">✨ 靈動光環懸浮 (精靈光暈)</option>
+                  <option value="glass-circle">🔮 現代毛玻璃圓環</option>
+                  <option value="cutout-soft">🌿 柔和無邊框原形</option>
+                </select>
+              </div>
+              <div class="form-group flex-1">
+                <label for="input-pet-species">寵物品種 / 類型</label>
+                <input type="text" id="input-pet-species" class="form-control" placeholder="例如：英國短毛貓、柴犬、虎皮鸚鵡">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="input-real-pet-habits">真實寵物性格特徵 (AI 將繼承此性格)</label>
+              <textarea id="input-real-pet-habits" class="form-control" rows="2" placeholder="例如：超愛吃肉泥、喜歡被摸下巴、聽到罐頭聲會喵喵叫、傲嬌又黏人..."></textarea>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="input-pet-nickname">寵物暱稱</label>
+              <input type="text" id="input-pet-nickname" class="form-control" value="Lumi">
+            </div>
+            <div class="form-group flex-1">
+              <label for="slider-pet-scale">大小縮放 (80% ~ 130%)</label>
+              <input type="range" id="slider-pet-scale" min="80" max="130" value="100" class="form-slider">
+            </div>
+          </div>
+
+          <div class="form-checkbox-row">
+            <label class="checkbox-label">
+              <input type="checkbox" id="check-pet-sound" checked>
+              <span>啟用互動可愛音效 (撫摸、投餵、提示)</span>
+            </label>
+          </div>
+          <div class="form-checkbox-row">
+            <label class="checkbox-label">
+              <input type="checkbox" id="check-auto-speech" checked>
+              <span>定時冒出關心氣泡 (提醒喝水、休息與問候)</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Tab 3: System & Shortcuts -->
+        <div id="tab-system" class="tab-content">
+          <div class="shortcuts-guide">
+            <div class="shortcut-item">
+              <span class="shortcut-name">雙形態切換 (寵物 ↔ 對話視窗)</span>
+              <kbd class="shortcut-kbd">Option + Space</kbd>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-name">快速喚起 / 聚焦置頂</span>
+              <kbd class="shortcut-kbd">Cmd/Ctrl + Shift + P</kbd>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-name">對話框快速收合回寵物</span>
+              <kbd class="shortcut-kbd">Esc</kbd>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 14px;">
+            <label for="slider-opacity">視窗毛玻璃不透明度 (<span id="val-opacity">96%</span>)</label>
+            <input type="range" id="slider-opacity" min="70" max="100" value="96" class="form-slider">
+          </div>
+
+          <div class="form-checkbox-row">
+            <label class="checkbox-label">
+              <input type="checkbox" id="check-always-top" checked>
+              <span>視窗始終置頂 (Always On Top)</span>
+            </label>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button id="btn-reset-settings" class="btn-secondary">恢復預設</button>
+        <button id="btn-save-settings" class="btn-primary">保存設定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audio elements generated via Web Audio API synthesis for zero external dependency -->
+  
+  <script src="pet.js"></script>
+  <script src="ai-service.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
