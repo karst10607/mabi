@@ -26,6 +26,8 @@ class PetEngine {
     this.audioCtx = null;
     this.speechTimer = null;
     this.blinkInterval = null;
+    this.rig2d = null;
+    this.rigToken = 0;
 
     this.init();
   }
@@ -112,13 +114,14 @@ class PetEngine {
   // SVG Skins Generation
   renderSkin() {
     if (!this.container) return;
+    this.disposeRig();
 
     if (this.petNameBadge) {
       this.petNameBadge.textContent = `${this.nickname} ✦`;
     }
 
     if (this.miniPetIcon) {
-      const emojiMap = { kitsune: '🦊', shiba: '🐕', cat: '🐱', slime: '✨' };
+      const emojiMap = { kitsune: '🦊', shiba: '🐕', cat: '🐱', cat2d: '🐈', slime: '✨' };
       this.miniPetIcon.textContent = emojiMap[this.skin] || '🦊';
     }
 
@@ -292,7 +295,7 @@ class PetEngine {
           <circle cx="60" cy="74" r="4.5" fill="#fbbf24" filter="drop-shadow(0 0 3px #fde047)"/>
         </svg>
       `;
-    } else {
+    } else if (this.skin === 'slime') {
       // Mochi - Cosmic Slime
       svgHtml = `
         <svg class="pet-svg" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -328,6 +331,8 @@ class PetEngine {
           <path id="pet-mouth" d="M56 68 Q 60 74 64 68" stroke="#0f172a" stroke-width="2" stroke-linecap="round" fill="none"/>
         </svg>
       `;
+    } else if (this.skin === 'cat2d') {
+      svgHtml = `<div class="rig2d-host" id="rig2d-host"></div>`;
     } else if (this.skin === 'custom_photo') {
       // Real Pet Photo Modeling
       const customPhoto = localStorage.getItem('aurapet_custom_photo');
@@ -360,6 +365,36 @@ class PetEngine {
     }
 
     this.container.innerHTML = svgHtml;
+    this.container.classList.toggle('rig-mode', this.skin === 'cat2d');
+    if (this.skin === 'cat2d') this.mountRig();
+  }
+
+  async mountRig() {
+    const token = this.rigToken;
+    const host = document.getElementById('rig2d-host');
+    if (!host) return;
+    try {
+      const { PetRig2D } = await import('./rig2d.js');
+      const meta = (await import('./models/cat2d/cat_meta.js')).default;
+      if (token !== this.rigToken) return;
+      const rig = new PetRig2D(host);
+      await rig.load('./models/cat2d/cat_tex.png', meta, './models/cat2d/cat_tex_closed.png');
+      if (token !== this.rigToken) { rig.dispose(); return; }
+      rig.setViewport(host.clientWidth, host.clientHeight);
+      this.rig2d = rig;
+      window.rig2d = rig;
+    } catch (err) {
+      console.error('2D pet rig failed to load', err);
+    }
+  }
+
+  disposeRig() {
+    ++this.rigToken;
+    if (this.rig2d) {
+      this.rig2d.dispose();
+      this.rig2d = null;
+      window.rig2d = null;
+    }
   }
 
   // Interactivity
@@ -388,6 +423,7 @@ class PetEngine {
     this.increaseAffection(2);
     this.spawnParticle('❤️', clickX, clickY);
     this.setState('happy', 1200);
+    if (this.rig2d) this.rig2d.react('happy');
 
     const patLines = [
       '好舒服～ 呼嚕呼嚕 (*/ω＼*)',
@@ -405,6 +441,7 @@ class PetEngine {
     this.increaseEnergy(5);
     this.spawnParticle('🍣');
     this.setState('eating', 1500);
+    if (this.rig2d) this.rig2d.react('eating');
 
     const snacks = ['鮮美三文魚壽司', '甜甜小布丁', '香脆小魚乾', '香濃小泡芙'];
     const snack = snacks[Math.floor(Math.random() * snacks.length)];
@@ -419,6 +456,7 @@ class PetEngine {
     this.spawnParticle('🎾');
     this.spawnParticle('✨');
     this.setState('happy', 1400);
+    if (this.rig2d) this.rig2d.react('play');
 
     this.say('接住球球了！耶～ 今天也是元氣滿滿的一天！🎾', 3500);
   }

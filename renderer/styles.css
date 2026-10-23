@@ -235,6 +235,23 @@ html, body {
   transform: scale(0.95);
 }
 
+.pet-graphic.rig-mode {
+  width: 150px;
+  height: 198px;
+  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.3));
+}
+
+.rig2d-host {
+  width: 100%;
+  height: 100%;
+}
+
+.rig2d-host canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
 /* SVG Pet Elements & Animations */
 .pet-svg {
   width: 100%;
