@@ -269,6 +269,12 @@ body.skin-rig .pet-shadow {
   height: 198px;
   /* a blurred drop shadow reads as a second, larger cat behind this photo skin */
   filter: none;
+  transition: none;
+}
+
+.pet-graphic.rig-mode:hover,
+.pet-graphic.rig-mode:active {
+  transform: none;
 }
 
 body.posture-rest .pet-graphic.rig-mode {

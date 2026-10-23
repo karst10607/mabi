@@ -2,6 +2,16 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.2.1] - 2026-10-23
+
+### Fixed
+
+- 修正切換寵物或切換姿態時出現全身「果凍式劇烈抖動／拉伸」的四大根因：
+  1. **呼吸與搖尾相位倒轉（主要根因）**：`renderer/rig2d.js` 原本以累積總時間 `t` 直接除以動態呼吸週期 `breathPeriod = 3.2 + sb * 2.0` 及乘以動態搖尾頻率 `t * (1.15 - sb * 0.5)`，當 `sleepBlend (sb)` 在 0.5 秒內於 `0 ↔ 1` 過渡且 `t` 已累積數十至數百秒時，相位瞬間倒退數十個週期（20~30Hz 高頻震動）。改為以每幀 `dt` 增量積分 `this.breathPhase` 與 `this.tailPhase`，頻率改變時相位完全連續。
+  2. **換貼圖前容器長寬比提前變形**：`renderer/pet.js` 的 `setPosture()` 原本在非同步載入新貼圖前就切換 `body.posture-rest`（將 `.pet-graphic.rig-mode` 從 `150×198` 改為 `178×184`），導致舊貼圖在 WebGL 畫布上先被橫向拉寬 19% 再換圖。改為待 `rig.load()` 完成後才在同一個同步 tick 內切換 `posture-rest`、`setSleepy(..., true)`、`setViewport()` 與 `stepAndRender(0)`。
+  3. **胸腔水平呼吸膨脹中心偏移**：`renderer/rig2d.js` Vertex Shader 原本以脖子 `uNeck.x` 作為胸腔水平膨脹中心，導致側臥／母雞蹲（如 `ami_rest` 頭偏右側）在呼吸時整個背部隨之左右晃動。新增 `uBreathCx` uniform，改以胸腔中心 `breathCx` 對稱膨脹。
+  4. **滑鼠懸停／點擊時的 CSS 彈簧縮放**：`renderer/styles.css` 為 `.pet-graphic.rig-mode` 關閉 `cubic-bezier(0.34, 1.56, 0.64, 1)` 的 `scale(1.06)` / `scale(0.95)` 過渡，避免點擊互動或切換時整張 WebGL 畫布產生果凍彈跳。
+
 ## [1.2.0] - 2026-10-23
 
 ### Added

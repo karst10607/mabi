@@ -14,6 +14,7 @@ attribute float aEarL;
 attribute float aEarR;
 
 uniform vec2  uNeck;
+uniform float uBreathCx;
 uniform vec2  uHeadShift;
 uniform float uHeadAngle;
 uniform float uHeadSquash;
@@ -54,7 +55,7 @@ void main() {
   // stretching up and down like slime.
   float chest = aBreath * uBreath;
   p.y += chest * 9.0;
-  p.x += (p.x - uNeck.x) * chest * 0.055;
+  p.x += (p.x - uBreathCx) * chest * 0.055;
 
   // tail sway, strongest at the very tip
   p.x += uTailSway * aTail * 34.0;
@@ -114,6 +115,8 @@ export class PetRig2D {
       earL: 0, earR: 0, tail: 0, alpha: 1,
     };
     this.t = 0;
+    this.breathPhase = 0;
+    this.tailPhase = 0;
     this.clock = performance.now();
     this.blink = 0;
     this.blinkTimer = 2 + Math.random() * 3;
@@ -227,6 +230,7 @@ export class PetRig2D {
         uTex: { value: tex },
         uTexClosed: { value: texClosed },
         uNeck: { value: neck },
+        uBreathCx: { value: breathCx },
         uHeadShift: { value: new THREE.Vector2() },
         uHeadAngle: { value: 0 },
         uHeadSquash: { value: 0 },
@@ -277,8 +281,11 @@ export class PetRig2D {
     this.viewScale = s;
   }
 
-  setSleepy(flag) {
+  setSleepy(flag, immediate = false) {
     this.sleepy = Boolean(flag);
+    if (immediate) {
+      this.sleepBlend = this.sleepy ? 1 : 0;
+    }
   }
 
   react(kind) {
@@ -289,16 +296,8 @@ export class PetRig2D {
     } else this.pulse = 1;
   }
 
-  animate(now) {
-    if (this.disposed) return;
-    requestAnimationFrame(this.animate);
-    const dt = Math.min(0.05, (now - this.clock) / 1000);
-    if (now - (this.lastFrame || 0) < 30) return; // 30 fps is plenty and saves GPU on an always-on-top window
-    this.lastFrame = now;
-    this.clock = now;
-    this.t += dt;
-    if (!this.ready) return;
-
+  stepAndRender(dt) {
+    if (!this.ready || !this.material) return;
     const t = this.t;
     const u = this.material.uniforms;
     const p = this.params;
@@ -317,12 +316,16 @@ export class PetRig2D {
     }
     this.blink += (blinkTarget - this.blink) * Math.min(1, dt * 26);
 
-    // asymmetric breath: quick inhale, longer exhale (~20 bpm awake, slower when dozing)
+    // Integrate breath & tail phases incrementally by dt so changing frequency
+    // during sleepBlend transitions never rewinds phase (t / period) and causes jelly vibration.
     const breathPeriod = 3.2 + sb * 2.0;
-    const phase = (t % breathPeriod) / breathPeriod;
+    this.breathPhase = ((this.breathPhase || 0) + dt / breathPeriod) % 1;
+    const phase = this.breathPhase;
     const breath = phase < 0.35
       ? smoothstep(0, 1, phase / 0.35)
       : 1 - smoothstep(0, 1, (phase - 0.35) / 0.65);
+
+    this.tailPhase = (this.tailPhase || 0) + dt * (1.15 - sb * 0.5);
     const sway = Math.sin(t * 0.53) * (1 - sb * 0.75);
     const headBob = Math.sin(t * 0.8 + 0.6) * awake + Math.sin(t * 0.6) * 0.35 * sb;
     const flickL = (Math.sin(t * 0.9) * 0.5 + 0.5 > 0.985 ? Math.sin(t * 34) * 0.16 : 0) * awake;
@@ -333,11 +336,15 @@ export class PetRig2D {
     const angleX = p.angleX + sway * 0.25;
     const angleY = p.angleY + headBob * 0.5 + sb * 0.75 + this.nod * 1.5;
 
-    u.uHeadAngle.value += (angleZ - u.uHeadAngle.value) * Math.min(1, dt * 9);
+    if (dt === 0) {
+      u.uHeadAngle.value = angleZ;
+    } else {
+      u.uHeadAngle.value += (angleZ - u.uHeadAngle.value) * Math.min(1, dt * 9);
+    }
     u.uHeadShift.value.set(angleX * 14, -angleY * 9 + (breath - 0.5) * 3);
     u.uHeadSquash.value = Math.abs(angleX) * 0.03;
     u.uBreath.value = breath * (1 + this.pulse * 0.3);
-    u.uTailSway.value = Math.sin(t * (1.15 - sb * 0.5)) * (0.55 - sb * 0.42) + this.pulse * 0.5;
+    u.uTailSway.value = Math.sin(this.tailPhase) * (0.55 - sb * 0.42) + this.pulse * 0.5;
     u.uEarAngleL.value = (p.earL + sb * 0.42 + flickL) * 0.55;
     u.uEarAngleR.value = -(p.earR + sb * 0.42 + flickR) * 0.55;
     u.uEyeOpen.value = Math.min(p.eyeOpen, 1 - Math.max(this.blink, sb));
@@ -345,6 +352,18 @@ export class PetRig2D {
     u.uAlpha.value = p.alpha;
 
     this.renderer.render(this.scene, this.camera);
+  }
+
+  animate(now) {
+    if (this.disposed) return;
+    requestAnimationFrame(this.animate);
+    const dt = Math.min(0.05, (now - this.clock) / 1000);
+    if (now - (this.lastFrame || 0) < 30) return; // 30 fps is plenty and saves GPU on an always-on-top window
+    this.lastFrame = now;
+    this.clock = now;
+    this.t += dt;
+    if (!this.ready) return;
+    this.stepAndRender(dt);
   }
 
   dispose() {

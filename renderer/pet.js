@@ -505,10 +505,12 @@ class PetEngine {
     return posture === 'doze' || posture === 'sleep';
   }
 
-  syncPostureUI() {
+  syncPostureUI(opts = {}) {
     const isRest = this.isRestPose();
     const isSleepy = this.isSleepyPosture();
-    document.body.classList.toggle('posture-rest', isRest);
+    if (!opts.skipBodyClass) {
+      document.body.classList.toggle('posture-rest', isRest);
+    }
     document.body.classList.toggle('posture-sleepy', isSleepy);
 
     const btnRest = document.getElementById('btn-pet-rest');
@@ -531,16 +533,19 @@ class PetEngine {
 
   setPosture(newPosture, opts = {}) {
     if (!['sit', 'doze', 'rest', 'sleep'].includes(newPosture)) newPosture = 'sit';
-    const prevPose = this.isRestPose(this.posture) ? 'rest' : 'sit';
-    this.posture = newPosture;
-    localStorage.setItem('aurapet_posture', newPosture);
-    this.syncPostureUI();
-
     const nextPose = this.isRestPose(newPosture) ? 'rest' : 'sit';
     const isSleepy = this.isSleepyPosture(newPosture);
+    const needsTextureSwap =
+      this.isRigSkin() && (!this.rig2d || this.loadedRigPose !== nextPose || this.loadedRigSkin !== this.skin);
+
+    this.posture = newPosture;
+    localStorage.setItem('aurapet_posture', newPosture);
+    // Defer resizing the container (`posture-rest` class) until the new texture finishes loading
+    // so the current WebGL canvas is not stretched to the wrong aspect ratio before swap.
+    this.syncPostureUI({ skipBodyClass: needsTextureSwap });
 
     if (this.isRigSkin()) {
-      if (this.rig2d && this.loadedRigPose === nextPose && this.loadedRigSkin === this.skin) {
+      if (!needsTextureSwap) {
         this.rig2d.setSleepy(isSleepy);
         const host = document.getElementById('rig2d-host');
         if (host) this.rig2d.setViewport(host.clientWidth, host.clientHeight);
@@ -622,8 +627,10 @@ class PetEngine {
         `${cfg.dir}/${basePrefix}_tex_closed.png`
       );
       if (token !== this.rigToken) return;
-      rig.setSleepy(this.isSleepyPosture());
+      document.body.classList.toggle('posture-rest', useRest);
+      rig.setSleepy(this.isSleepyPosture(), true);
       rig.setViewport(host.clientWidth, host.clientHeight);
+      rig.stepAndRender(0);
       this.loadedRigPose = useRest ? 'rest' : 'sit';
       this.loadedRigSkin = skinId;
     } catch (err) {
