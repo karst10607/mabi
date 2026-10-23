@@ -23,13 +23,13 @@
 
 ### Added
 
-- 透視跑動引擎：底部快捷列新增 `🏃` 按鈕（`#btn-pet-perspective`），以 Z 軸深度做進出场動畫——遠方 tiny 奔跑進場、視窗外散步、深處折返、湊近螢幕。
+- 透視跑動引擎：底部快捷列新增 `🏃` 按鈕（`#btn-pet-perspective`），以 Z 軸深度做進出場動畫——遠方微小尺寸奔跑進場、視窗外散步、深處折返、湊近螢幕。
 - 條碼新增專屬奔跑姿態 `renderer/models/cat2d/cat_run_*`：有跑動姿態時走 **Mode B**（專屬跑姿），其餘角色走 **Mode A**（骨骼步態＋深度縮放）。
 
 ### Fixed
 
 - 眼神跟隨不再破圖：`renderer/rig2d.js` 把 UV 位移限制在虹膜半徑內，避免黑色眼線被拖進眼球或向下看時 UV 空間折疊；閉眼貼圖也重製為帶毛紋版本。
-- 熟睡時不再因 `sb` 直接壓满而完全停止眨眼混合；`main.js` 加上 `disable-domain-blocking-for-3d-apis` 與 `ignore-gpu-blocklist`，改善部分 GPU 環境的 WebGL 渲染。
+- 跑動與睡眠混合不再把眨眼權重直接壓死；`main.js` 加上 `disable-domain-blocking-for-3d-apis` 與 `ignore-gpu-blocklist`，改善部分 GPU 環境的 WebGL 渲染。
 
 ## [1.3.0] - 2026-10-23
 
