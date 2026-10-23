@@ -500,7 +500,7 @@ location.reload();
 
 ```bash
 npm install
-npx electron-builder --win portable   # dist/AuraPet 1.0.0.exe（單檔，73 MB）
+npx electron-builder --win portable   # dist/AuraPet 1.0.1.exe（單檔，73 MB）
 npx electron-builder --win nsis
 
 # 確認授權有問題的 GLB 沒進 asar（應該沒有輸出）
