@@ -7,6 +7,7 @@ surrounding fur, then a soft lid line is drawn across it.
 """
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -32,21 +33,33 @@ def main():
     bgr = tex[..., :3].copy()
     alpha = tex[..., 3].copy()
 
-    # the green iris is the only reliable eye marker; dilate it to swallow the lid rim
+    eyes_sorted = sorted(meta["eyes"], key=lambda e: e["cx"])
+    if len(eyes_sorted) >= 2:
+        dx_eye = eyes_sorted[1]["cx"] - eyes_sorted[0]["cx"]
+        dy_eye = eyes_sorted[1]["cy"] - eyes_sorted[0]["cy"]
+        eye_angle_rad = math.atan2(dy_eye, dx_eye) if abs(dx_eye) > 1e-3 else 0.0
+    else:
+        eye_angle_rad = 0.0
+    eye_angle_deg = math.degrees(eye_angle_rad)
+    cos_a, sin_a = math.cos(eye_angle_rad), math.sin(eye_angle_rad)
+
+    # the green/yellow-green iris is the eye marker; dilate it to swallow the lid rim
     b, g, r = bgr[..., 0].astype(int), bgr[..., 1].astype(int), bgr[..., 2].astype(int)
-    green = ((g > 90) & (g > r + 18) & (g > b + 18) & (alpha > 40)).astype(np.uint8)
+    green = ((((g > 90) & (g > r + 18) & (g > b + 18)) | ((g > 110) & (g > b + 38) & (g >= r - 20))) & (alpha > 40)).astype(np.uint8)
     n, lab = cv2.connectedComponents(green)
     kern = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 25))
     eye_masks = []
     for e in meta["eyes"]:
         cx, cy = e["cx"] - ox, e["cy"] - oy
         # the pupil sits at the eye centre, so look in a window for the iris label
-        win = lab[int(cy) - 20:int(cy) + 21, int(cx) - 25:int(cx) + 26]
+        y_lo, y_hi = max(0, int(cy) - 20), min(h, int(cy) + 21)
+        x_lo, x_hi = max(0, int(cx) - 25), min(w, int(cx) + 26)
+        win = lab[y_lo:y_hi, x_lo:x_hi]
         ids, counts = np.unique(win[win > 0], return_counts=True)
         m = np.zeros((h, w), np.uint8)
         cv2.ellipse(m, (int(round(cx)), int(round(cy))),
                     (int(round(e["rx"] * 2.6)), int(round(e["ry"] * 2.6))),
-                    0, 0, 360, 1, -1)
+                    eye_angle_deg, 0, 360, 1, -1)
         if len(ids):
             lid = ids[np.argmax(counts)]
             m |= cv2.dilate((lab == lid).astype(np.uint8), kern)
@@ -55,13 +68,27 @@ def main():
         eye_masks.append((cx, cy, e["rx"], e["ry"], m))
         print("eye mask px:", int(m.sum()))
 
-    for cx, cy, rx, ry, mask in eye_masks:
-        bgr = cv2.inpaint(bgr, mask * 255, 6, cv2.INPAINT_TELEA)
+    def rot_pt(dx, dy, cx0, cy0):
+        return (cx0 + dx * cos_a - dy * sin_a, cy0 + dx * sin_a + dy * cos_a)
 
-        # lid line: shallow down-curve spanning the eye
-        p0 = (cx - rx * 1.7, cy + 0.5)
-        p2 = (cx + rx * 1.7, cy + 0.5)
-        p1 = (cx, cy + ry * 0.5)
+    # Fill transparent background pixels with warm fur color before inpainting
+    # so eyes near the silhouette border never bleed black (0,0,0) from alpha=0 pixels.
+    bgr_for_inpaint = bgr.copy()
+    outside = alpha < 60
+    if outside.any():
+        bgr_for_inpaint[outside] = np.array([105, 152, 192], dtype=np.uint8)  # warm sandy-brown BGR
+
+    for cx, cy, rx, ry, mask in eye_masks:
+        inpainted = cv2.inpaint(bgr_for_inpaint, mask * 255, 6, cv2.INPAINT_TELEA)
+        bgr = np.where((mask & (alpha > 10))[..., None], inpainted, bgr)
+        bgr_for_inpaint = bgr.copy()
+        if outside.any():
+            bgr_for_inpaint[outside] = np.array([105, 152, 192], dtype=np.uint8)
+
+        # lid line: shallow down-curve spanning the eye, rotated by eye_angle_rad
+        p0 = rot_pt(-rx * 1.6, 0.5, cx, cy)
+        p2 = rot_pt(+rx * 1.6, 0.5, cx, cy)
+        p1 = rot_pt(0.0, ry * 0.55, cx, cy)
         pts = []
         for i in range(41):
             t = i / 40
@@ -71,7 +98,8 @@ def main():
         line = np.zeros((h, w), np.uint8)
         cv2.polylines(line, [np.round(np.array(pts)).astype(np.int32)], False, 255, 3, cv2.LINE_AA)
         line = cv2.GaussianBlur(line, (0, 0), 0.8).astype(np.float32) / 255.0
-        line = np.clip(line * 1.35, 0, 1)[..., None]
+        line = np.clip(line * 1.35, 0, 1) * (alpha > 40).astype(np.float32)
+        line = line[..., None]
         lid_color = np.array([14, 20, 30], np.float32)  # BGR, dark warm brown
         bgr = (bgr.astype(np.float32) * (1 - line) + lid_color * line).astype(np.uint8)
 

@@ -8,21 +8,24 @@ const RIG_SKINS = {
     prefix: 'cat',
     emoji: '🐈',
     defaultName: '條碼',
-    species: 'cat'
+    species: 'cat',
+    extraPoses: ['side', 'belly']
   },
   ami2d: {
     dir: './models/ami2d',
     prefix: 'ami',
     emoji: '🧡',
     defaultName: '阿咪',
-    species: 'cat'
+    species: 'cat',
+    extraPoses: []
   },
   kk2d: {
     dir: './models/kk2d',
     prefix: 'kk',
     emoji: '🐕‍🦺',
     defaultName: 'KK',
-    species: 'dog'
+    species: 'dog',
+    extraPoses: []
   }
 };
 
@@ -505,11 +508,37 @@ class PetEngine {
     return posture === 'doze' || posture === 'sleep';
   }
 
+  getSupportedPostures(skinId = this.skin) {
+    const cfg = RIG_SKINS[skinId];
+    const base = ['sit', 'doze', 'rest', 'sleep'];
+    if (cfg && Array.isArray(cfg.extraPoses) && cfg.extraPoses.length) {
+      return [...base, ...cfg.extraPoses];
+    }
+    return base;
+  }
+
+  getRigPoseKey(posture = this.posture, skinId = this.skin) {
+    const cfg = RIG_SKINS[skinId];
+    if ((posture === 'side' || posture === 'belly') && cfg?.extraPoses?.includes(posture)) {
+      return posture;
+    }
+    if (this.isRestPose(posture) || posture === 'side' || posture === 'belly') {
+      return 'rest';
+    }
+    return 'sit';
+  }
+
+  applyPoseBodyClasses(poseKey = this.getRigPoseKey()) {
+    document.body.classList.toggle('posture-rest', poseKey === 'rest');
+    document.body.classList.toggle('posture-side', poseKey === 'side');
+    document.body.classList.toggle('posture-belly', poseKey === 'belly');
+  }
+
   syncPostureUI(opts = {}) {
-    const isRest = this.isRestPose();
+    const poseKey = this.getRigPoseKey();
     const isSleepy = this.isSleepyPosture();
     if (!opts.skipBodyClass) {
-      document.body.classList.toggle('posture-rest', isRest);
+      this.applyPoseBodyClasses(poseKey);
     }
     document.body.classList.toggle('posture-sleepy', isSleepy);
 
@@ -521,26 +550,29 @@ class PetEngine {
         sit: '目前：坐姿清醒（點擊切換為打瞌睡）',
         doze: '目前：坐姿打瞌睡 [方案A]（點擊切換為趴下休息）',
         rest: '目前：趴下休息 [方案B]（點擊切換為趴睡）',
-        sleep: '目前：趴下熟睡 [方案A+B]（點擊喚醒回坐姿）',
+        sleep: '目前：趴下熟睡 [方案A+B]（點擊切換下一姿態）',
+        side: '目前：側躺玩拳頭（點擊切換為仰天躺翻肚）',
+        belly: '目前：仰天躺手手高舉（點擊喚醒回坐姿）',
       };
       btnRest.title = labels[this.posture] || '切換休息姿態';
     }
     if (iconEl) {
-      const icons = { sit: '💤', doze: '😪', rest: '🐾', sleep: '🌙' };
+      const icons = { sit: '💤', doze: '😪', rest: '🐾', sleep: '🌙', side: '🥊', belly: '🙌' };
       iconEl.textContent = icons[this.posture] || '💤';
     }
   }
 
   setPosture(newPosture, opts = {}) {
-    if (!['sit', 'doze', 'rest', 'sleep'].includes(newPosture)) newPosture = 'sit';
-    const nextPose = this.isRestPose(newPosture) ? 'rest' : 'sit';
+    const supported = this.getSupportedPostures();
+    if (!supported.includes(newPosture)) newPosture = 'sit';
+    const nextPose = this.getRigPoseKey(newPosture);
     const isSleepy = this.isSleepyPosture(newPosture);
     const needsTextureSwap =
       this.isRigSkin() && (!this.rig2d || this.loadedRigPose !== nextPose || this.loadedRigSkin !== this.skin);
 
     this.posture = newPosture;
     localStorage.setItem('aurapet_posture', newPosture);
-    // Defer resizing the container (`posture-rest` class) until the new texture finishes loading
+    // Defer resizing the container (`posture-rest`/`side`/`belly` classes) until the new texture finishes loading
     // so the current WebGL canvas is not stretched to the wrong aspect ratio before swap.
     this.syncPostureUI({ skipBodyClass: needsTextureSwap });
 
@@ -563,6 +595,8 @@ class PetEngine {
         doze: '呼嚕… 眼皮有點重，坐著打個小盹 😪💤',
         rest: isDog ? '趴下來乘涼休息一下，還是看著你哦 🐾' : '折手手母雞蹲休息一下～ 🐾',
         sleep: isDog ? '趴著瞇一下最舒服了… 呼嚕呼嚕 🌙💤' : '母雞蹲閉眼熟睡中… 呼嚕呼嚕 🌙💤',
+        side: '側躺揉揉小拳頭～ 瞇一下眼又偷看你一眼 🥊✨',
+        belly: `手手高舉萬歲～！神聖的小肚肚開放讓${this.userTitle}摸摸 🙌❤️`,
       };
       this.say(lines[newPosture], 3200);
     }
@@ -570,14 +604,16 @@ class PetEngine {
 
   cyclePosture() {
     this.lastInteractionAt = Date.now();
-    const order = ['sit', 'doze', 'rest', 'sleep'];
+    const order = this.getSupportedPostures();
     const idx = order.indexOf(this.posture);
     const next = order[(idx + 1) % order.length];
     this.playSound('pop');
     if (next === 'doze' || next === 'sleep') {
       this.spawnParticle('💤');
-    } else if (next === 'rest') {
+    } else if (next === 'rest' || next === 'side') {
       this.spawnParticle('🐾');
+    } else if (next === 'belly') {
+      this.spawnParticle('❤️');
     } else {
       this.spawnParticle('✨');
     }
@@ -610,8 +646,8 @@ class PetEngine {
     if (!host) return;
     try {
       const { PetRig2D } = await import('./rig2d.js');
-      const useRest = this.isRestPose();
-      const basePrefix = useRest ? `${cfg.prefix}_rest` : cfg.prefix;
+      const poseKey = this.getRigPoseKey(this.posture, skinId);
+      const basePrefix = poseKey === 'sit' ? cfg.prefix : `${cfg.prefix}_${poseKey}`;
       const meta = (await import(`${cfg.dir}/${basePrefix}_meta.js`)).default;
       if (token !== this.rigToken) return;
       let rig = this.rig2d;
@@ -627,11 +663,11 @@ class PetEngine {
         `${cfg.dir}/${basePrefix}_tex_closed.png`
       );
       if (token !== this.rigToken) return;
-      document.body.classList.toggle('posture-rest', useRest);
+      this.applyPoseBodyClasses(poseKey);
       rig.setSleepy(this.isSleepyPosture(), true);
       rig.setViewport(host.clientWidth, host.clientHeight);
       rig.stepAndRender(0);
-      this.loadedRigPose = useRest ? 'rest' : 'sit';
+      this.loadedRigPose = poseKey;
       this.loadedRigSkin = skinId;
     } catch (err) {
       console.error('2D pet rig failed to load', err);

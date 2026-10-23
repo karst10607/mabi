@@ -116,6 +116,7 @@ def main():
             "head": rig["head"],
             "breath": rig["breath"],
             "ears": rig.get("ears", []),
+            "paws": rig.get("paws", []),
             "tail": rig.get("tail"),
             "eyeRadiusScale": rig["eyeRadiusScale"],
         },

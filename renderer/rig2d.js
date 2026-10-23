@@ -12,6 +12,8 @@ attribute float aBreath;
 attribute float aTail;
 attribute float aEarL;
 attribute float aEarR;
+attribute float aPawL;
+attribute float aPawR;
 
 uniform vec2  uNeck;
 uniform float uBreathCx;
@@ -24,6 +26,10 @@ uniform vec2  uEarPivotL;
 uniform vec2  uEarPivotR;
 uniform float uEarAngleL;
 uniform float uEarAngleR;
+uniform vec2  uPawPivotL;
+uniform vec2  uPawPivotR;
+uniform float uPawAngleL;
+uniform float uPawAngleR;
 
 varying vec2 vUv;
 
@@ -49,6 +55,10 @@ void main() {
   rel = vec2(c * rel.x - s * rel.y, s * rel.x + c * rel.y);
   rel.x *= 1.0 - uHeadSquash * aHead;
   p = uNeck + rel + uHeadShift * aHead;
+
+  // front paws (raised hands overhead in belly-up pose, or curled fists in side-lying pose)
+  p = mix(p, rotateAbout(p, uPawPivotL, uPawAngleL), aPawL);
+  p = mix(p, rotateAbout(p, uPawPivotR, uPawAngleR), aPawR);
 
   // ribcage: lift and widen around the chest only. The weight fades out by the
   // elbows so the forelegs and paws stay planted instead of the whole cat
@@ -122,6 +132,28 @@ export class PetRig2D {
     this.blinkTimer = 2 + Math.random() * 3;
     this.sleepy = false;
     this.sleepBlend = 0;
+    this.gazeTimer = 1.5;
+    this.autoGazeTargetX = 0;
+    this.autoGazeTargetY = 0;
+    this.autoGazeX = 0;
+    this.autoGazeY = 0;
+    this.autoDrowsyTarget = 0;
+    this.autoDrowsy = 0;
+    this.mouseGazeX = 0;
+    this.mouseGazeY = 0;
+    this.lastMouseAt = 0;
+
+    this.onMouseMove = (e) => {
+      if (this.disposed || !this.container) return;
+      const rect = this.container.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const nx = Math.max(-1.3, Math.min(1.3, ((e.clientX - (rect.left + rect.width * 0.5)) / (rect.width * 0.6))));
+      const ny = Math.max(-1.0, Math.min(1.0, ((e.clientY - (rect.top + rect.height * 0.42)) / (rect.height * 0.6))));
+      this.mouseGazeX = nx;
+      this.mouseGazeY = ny;
+      this.lastMouseAt = performance.now();
+    };
+    window.addEventListener('mousemove', this.onMouseMove, { passive: true });
 
     this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, premultipliedAlpha: false });
     this.renderer.setPixelRatio(window.devicePixelRatio || 1);
@@ -167,13 +199,17 @@ export class PetRig2D {
       return { cx, cy, sx: e.sigma[0], sy: e.sigma[1], pivot: worldPoint(e.pivot) };
     });
     if (ears.length !== 0 && ears.length !== 2) throw new Error('rig.ears must list 0 or 2 ears');
+    const paws = (rig.paws || []).map((pw) => {
+      const [cx, cy] = texPoint(pw.center);
+      return { cx, cy, sx: pw.sigma[0], sy: pw.sigma[1], pivot: worldPoint(pw.pivot) };
+    });
     const breath = rig.breath;
     const [breathCx, breathCy] = texPoint(breath.center);
     const tail = rig.tail || null;
 
     // grid in texture-pixel space with y flipped into world space (y up)
     const pos = [], uv = [], idx = [];
-    const wHead = [], wBreath = [], wTail = [], wEarL = [], wEarR = [];
+    const wHead = [], wBreath = [], wTail = [], wEarL = [], wEarR = [], wPawL = [], wPawR = [];
 
     for (let j = 0; j <= ROWS; j++) {
       for (let i = 0; i <= COLS; i++) {
@@ -188,8 +224,16 @@ export class PetRig2D {
           const belowEyes = smoothstep(eyeTY - 20, eyeTY + 60, y);
           head *= 1 - belowEyes * (1 - xWeight);
         }
+        if (Array.isArray(rig.head.xRange) && rig.head.xRange.length === 2) {
+          const xMin = rig.head.xRange[0] - ox;
+          const xMax = rig.head.xRange[1] - ox;
+          const inX = smoothstep(xMin - 24, xMin + 12, x) * smoothstep(xMax + 24, xMax - 12, x);
+          head *= inX;
+        }
         const earL = ears.length ? gauss(x, y, ears[0].cx, ears[0].cy, ears[0].sx, ears[0].sy) : 0;
         const earR = ears.length ? gauss(x, y, ears[1].cx, ears[1].cy, ears[1].sx, ears[1].sy) : 0;
+        const pawL = paws.length >= 1 ? gauss(x, y, paws[0].cx, paws[0].cy, paws[0].sx, paws[0].sy) : 0;
+        const pawR = paws.length >= 2 ? gauss(x, y, paws[1].cx, paws[1].cy, paws[1].sx, paws[1].sy) : 0;
         const tailW = tail
           ? smoothstep(tail.x[0] - ox, tail.x[1] - ox, x) * smoothstep(tail.y[0] - oy, tail.y[1] - oy, y)
           : 0;
@@ -200,6 +244,8 @@ export class PetRig2D {
         wTail.push(tailW);
         wEarL.push(earL * head);
         wEarR.push(earR * head);
+        wPawL.push(pawL);
+        wPawR.push(pawR);
       }
     }
     for (let j = 0; j < ROWS; j++) {
@@ -220,6 +266,8 @@ export class PetRig2D {
     geo.setAttribute('aTail', new THREE.Float32BufferAttribute(wTail, 1));
     geo.setAttribute('aEarL', new THREE.Float32BufferAttribute(wEarL, 1));
     geo.setAttribute('aEarR', new THREE.Float32BufferAttribute(wEarR, 1));
+    geo.setAttribute('aPawL', new THREE.Float32BufferAttribute(wPawL, 1));
+    geo.setAttribute('aPawR', new THREE.Float32BufferAttribute(wPawR, 1));
     geo.setIndex(idx);
 
     const mat = new THREE.ShaderMaterial({
@@ -240,6 +288,10 @@ export class PetRig2D {
         uEarPivotR: { value: ears.length ? ears[1].pivot : neck.clone() },
         uEarAngleL: { value: 0 },
         uEarAngleR: { value: 0 },
+        uPawPivotL: { value: paws.length >= 1 ? paws[0].pivot : neck.clone() },
+        uPawPivotR: { value: paws.length >= 2 ? paws[1].pivot : neck.clone() },
+        uPawAngleL: { value: 0 },
+        uPawAngleR: { value: 0 },
         uEyeLUv: { value: new THREE.Vector2((eyeL.cx - ox) / W, (eyeL.cy - oy) / H) },
         uEyeRUv: { value: new THREE.Vector2((eyeR.cx - ox) / W, (eyeR.cy - oy) / H) },
         uEyeLRad: { value: new THREE.Vector2(eyeL.rx * rig.eyeRadiusScale / W, eyeL.ry * rig.eyeRadiusScale / H) },
@@ -347,8 +399,46 @@ export class PetRig2D {
     u.uTailSway.value = Math.sin(this.tailPhase) * (0.55 - sb * 0.42) + this.pulse * 0.5;
     u.uEarAngleL.value = (p.earL + sb * 0.42 + flickL) * 0.55;
     u.uEarAngleR.value = -(p.earR + sb * 0.42 + flickR) * 0.55;
-    u.uEyeOpen.value = Math.min(p.eyeOpen, 1 - Math.max(this.blink, sb));
-    u.uGaze.value.set((p.gazeX || 0) + angleX * 0.9, (p.gazeY || 0) - angleY * 0.9);
+
+    // Front paws: playful curled-fist knead in side-lying or gentle stretch in belly-up
+    const pawAmp = (0.075 - sb * 0.045) + this.pulse * 0.14;
+    u.uPawAngleL.value = Math.sin(this.tailPhase * 1.25 + 0.4) * pawAmp;
+    u.uPawAngleR.value = -Math.sin(this.tailPhase * 1.1 + 1.5) * pawAmp;
+
+    // Autonomous gaze cycling: look at camera (0,0) <-> look away elsewhere <-> drowsy eye-close
+    this.gazeTimer -= dt;
+    if (this.gazeTimer <= 0) {
+      const r = Math.random();
+      if (r < 0.42) {
+        // Look straight at the viewer / camera
+        this.autoGazeTargetX = 0;
+        this.autoGazeTargetY = 0;
+        this.autoDrowsyTarget = 0;
+        this.gazeTimer = 2.6 + Math.random() * 2.8;
+      } else if (r < 0.78) {
+        // Glance away to the side / elsewhere
+        const dirX = Math.random() < 0.5 ? -1 : 1;
+        this.autoGazeTargetX = dirX * (0.75 + Math.random() * 0.55);
+        this.autoGazeTargetY = (Math.random() - 0.5) * 0.9;
+        this.autoDrowsyTarget = 0;
+        this.gazeTimer = 2.2 + Math.random() * 2.6;
+      } else {
+        // Cozy brief eye-close / squinting rest
+        this.autoDrowsyTarget = 1;
+        this.gazeTimer = 1.6 + Math.random() * 1.8;
+      }
+    }
+    const mouseActive = (performance.now() - this.lastMouseAt) < 2200;
+    const targetGX = mouseActive ? this.mouseGazeX : this.autoGazeTargetX;
+    const targetGY = mouseActive ? this.mouseGazeY : this.autoGazeTargetY;
+    const targetDrowsy = mouseActive ? 0 : this.autoDrowsyTarget;
+    const gazeLerp = dt === 0 ? 1 : Math.min(1, dt * 5.5);
+    this.autoGazeX += (targetGX - this.autoGazeX) * gazeLerp;
+    this.autoGazeY += (targetGY - this.autoGazeY) * gazeLerp;
+    this.autoDrowsy += (targetDrowsy - this.autoDrowsy) * (dt === 0 ? 1 : Math.min(1, dt * 4.5));
+
+    u.uEyeOpen.value = Math.min(p.eyeOpen, 1 - Math.max(this.blink, sb, this.autoDrowsy));
+    u.uGaze.value.set((p.gazeX || 0) + this.autoGazeX + angleX * 0.9, (p.gazeY || 0) + this.autoGazeY - angleY * 0.9);
     u.uAlpha.value = p.alpha;
 
     this.renderer.render(this.scene, this.camera);
@@ -368,6 +458,7 @@ export class PetRig2D {
 
   dispose() {
     this.disposed = true;
+    window.removeEventListener('mousemove', this.onMouseMove);
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

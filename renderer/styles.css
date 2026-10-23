@@ -288,6 +288,28 @@ body.posture-rest .pet-shadow {
   margin-top: -10px;
 }
 
+body.posture-side .pet-graphic.rig-mode {
+  width: 218px;
+  height: 108px;
+}
+
+body.posture-side .pet-shadow {
+  width: 172px;
+  height: 14px;
+  margin-top: -10px;
+}
+
+body.posture-belly .pet-graphic.rig-mode {
+  width: 146px;
+  height: 204px;
+}
+
+body.posture-belly .pet-shadow {
+  width: 92px;
+  height: 16px;
+  margin-top: -12px;
+}
+
 /* Screen-edge hopping. The main process moves the window; these classes add
    the crouch/stretch a moving rectangle cannot show and keep the idle float
    from fighting the arc. */
