@@ -195,6 +195,45 @@ hy3d-venv/Scripts/python.exe make_closed.py
     改成 `LinearMipmapLinearFilter` + `generateMipmaps = true` + `anisotropy = 4`
     之後，鬍鬚變成連續淡線，臉頰的雜點也消失，眼睛細節仍保留。
 
+12. **設定面板在寵物小視窗裡「滾不動」**
+    寵物視窗只有 240×290，開設定後可捲動區實際只剩約 156 px 高。
+    成因有三個，疊加起來像「卡住」：
+    - 分頁列（`.settings-tabs`）放在 `.modal-body` 裡面，往下滾時分頁會跟著跑掉，
+      使用者失去「這裡可以換頁」的線索。→ 移到 `.modal-body` 之前，並加
+      `flex-shrink: 0` 把 header／tabs／footer 都釘住。
+    - 可捲動區被壓成一條窄縫，滑鼠滾輪停在 header、tabs、footer 或遮罩上時
+      完全沒有反應。→ `settingsModal` 上監聽 `wheel`，事件不在 body 裡就轉發
+      `body.scrollTop += e.deltaY`。
+    - 捲軸只有系統預設細線、幾乎看不到。→ 自訂 `::-webkit-scrollbar`
+      （10 px、半透明白），並加 `overscroll-behavior: contain`。
+    另外把 modal 從 `90% / max-height 88%` 放寬到 `calc(100% - 12px)`、
+    卡片壓縮（emoji 18 px、說明 `nowrap + ellipsis` 避免高度不齊），
+    且在高 `max-height: 420px` 時再縮一級 padding。
+    開面板與切分頁時 `scrollTop = 0`，切到寵物頁會 `scrollIntoView` 目前選中的卡。
+
+13. **上傳預覽與佔位圖重疊**
+    CSS 沒有全域 `.hidden` 規則（講話泡泡是淡出而非 `display:none`），
+    所以 `.photo-preview-container.hidden`、`.upload-placeholder.hidden` 從未真的隱藏，
+    空的預覽圓圈壓在上傳提示上。→ 針對這兩個元素補
+    `display: none !important`。
+
+14. **舊存的 skin 值讓寵物變空白**
+    3D 分支的 `model3d` 曾寫進 `localStorage.aurapet_skin`；2D 版本沒有這個
+    `renderSkin()` 分支，`svgHtml` 會是空字串 → 整個寵物區空白，而且設定面板
+    也沒有對應的 radio 可以改回來。→ `PetEngine` 加白名單，
+    不認得的值退回 `kitsune`。
+
+15. **`package.json` 少了 `three`**
+    2D 版的 import map 指向 `node_modules/three/build/three.module.js`，
+    但 commit 時沒有把依賴寫進 `package.json`／lock。本機因為已經裝了所以能跑，
+    乾淨 clone 後 `npm install` 不會有 three，cat2d 會直接載入失敗。
+    → 補 `"dependencies": { "three": "^0.186.1" }`。
+
+**捲動問題的驗證方式**：不能只用 CDP `Input.dispatchMouseEvent`，合成事件不會打到
+原生捲軸。改用 PowerShell `SetCursorPos` + `mouse_event` 送出 OS 層級輸入，
+分別測「滾輪停在 tabs／footer／遮罩」、「點捲軸軌道」、「拖曳捲軸拇指」三種操作，
+`scrollTop` 都能正常變化；只靠 JS 設 `scrollTop` 成功並不算修好。
+
 ---
 
 ## 5. 已發現（量測與素材）
@@ -221,8 +260,9 @@ hy3d-venv/Scripts/python.exe make_closed.py
 - **講話泡泡會蓋住貓臉**：這是原本所有 skin 都有的版面行為，對 198 px 高的貓更明顯，
   要不要為 cat2d 調整版面。
 - **是否把 cat2d 設為預設 skin**（現在預設仍是 kitsune）。
-- **設定面板在寵物小視窗裡很擠**：240×290 的視窗開設定時卡片要滾動才看得到，
-  六張 skin 卡的間距與高度還沒為這個尺寸調整。
+- **寵物視窗的設定面板本體是否要重排**：捲動問題已修（見 #12），
+  但在 240×290 下仍只能看到約 156 px 的內容，AI 模型設定得滾很久。
+  要不要把寵物視窗開設定時改成「暫時放大視窗」或「另開一般尺寸視窗」尚未決定。
 - **尾巴權重是概略值**：目前用左下角方形區域近似，尾巴壓在身體下方時表現尚可，
   但沒有精準的尾部遮罩。
 

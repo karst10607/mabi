@@ -2,6 +2,8 @@
  * AuraPet - Interactive Pet Animation & Sound Engine
  */
 
+const KNOWN_SKINS = ['kitsune', 'shiba', 'cat', 'cat2d', 'slime', 'custom_photo'];
+
 class PetEngine {
   constructor() {
     this.container = document.getElementById('pet-graphic');
@@ -14,7 +16,9 @@ class PetEngine {
     this.petNameBadge = document.getElementById('pet-name-badge');
 
     // Pet State
-    this.skin = localStorage.getItem('aurapet_skin') || 'kitsune';
+    // Saved value can outlive a removed skin (e.g. model3d), which would render an empty pet.
+    const savedSkin = localStorage.getItem('aurapet_skin');
+    this.skin = KNOWN_SKINS.includes(savedSkin) ? savedSkin : 'kitsune';
     this.nickname = localStorage.getItem('aurapet_name') || 'Lumi';
     this.soundEnabled = localStorage.getItem('aurapet_sound') !== 'false';
     this.autoSpeech = localStorage.getItem('aurapet_speech') !== 'false';

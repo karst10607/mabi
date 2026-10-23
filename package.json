@@ -35,5 +35,8 @@
       "target": ["AppImage", "deb"],
       "category": "Utility"
     }
+  },
+  "dependencies": {
+    "three": "^0.186.1"
   }
 }

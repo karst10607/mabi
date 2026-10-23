@@ -423,6 +423,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (skinRadio) skinRadio.checked = true;
 
     handleProviderFormVisibility();
+    document.querySelector('.modal-body').scrollTop = 0;
     settingsModal.classList.remove('hidden');
   }
 
@@ -446,8 +447,22 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.classList.add('active');
       const targetId = btn.dataset.tab;
       document.getElementById(targetId).classList.add('active');
+      document.querySelector('.modal-body').scrollTop = 0;
+      if (targetId === 'tab-pet') {
+        const checked = document.querySelector('input[name="petSkin"]:checked');
+        checked?.closest('.skin-card')?.scrollIntoView({ block: 'nearest' });
+      }
     });
   });
+
+  // In the pet-sized window the scrollable body is a narrow strip; let the
+  // wheel scroll it from anywhere in the dialog instead of silently doing nothing.
+  settingsModal.addEventListener('wheel', (e) => {
+    const body = document.querySelector('.modal-body');
+    if (body.contains(e.target)) return;
+    body.scrollTop += e.deltaY;
+    e.preventDefault();
+  }, { passive: false });
 
   // Dynamic Provider Visibility & Placeholders
   function handleProviderFormVisibility() {
