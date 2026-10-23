@@ -1,6 +1,7 @@
 // Live2D-style 2D pet rig: one texture, one deformable mesh.
 // Weights are baked per-vertex on the CPU; the vertex shader moves the head,
-// ears, tail and chest, the fragment shader swaps in a closed-eye texture.
+// ears, tail, chest, paws, and stepping legs; the fragment shader swaps in a
+// natural fur-grained closed-eye texture and shifts iris gaze cleanly.
 import * as THREE from 'three';
 
 const COLS = 72;
@@ -14,6 +15,8 @@ attribute float aEarL;
 attribute float aEarR;
 attribute float aPawL;
 attribute float aPawR;
+attribute float aStepL;
+attribute float aStepR;
 
 uniform vec2  uNeck;
 uniform float uBreathCx;
@@ -30,6 +33,8 @@ uniform vec2  uPawPivotL;
 uniform vec2  uPawPivotR;
 uniform float uPawAngleL;
 uniform float uPawAngleR;
+uniform float uStepPhase;
+uniform float uStepAmp;
 
 varying vec2 vUv;
 
@@ -56,9 +61,16 @@ void main() {
   rel.x *= 1.0 - uHeadSquash * aHead;
   p = uNeck + rel + uHeadShift * aHead;
 
-  // front paws (raised hands overhead in belly-up pose, or curled fists in side-lying pose)
+  // front paws (raised hands overhead in belly-up pose, curled fists in side-lying, or stepping forelegs in run pose)
   p = mix(p, rotateAbout(p, uPawPivotL, uPawAngleL), aPawL);
   p = mix(p, rotateAbout(p, uPawPivotR, uPawAngleR), aPawR);
+
+  // procedural alternating lower-limb stepping gait (Mode A & Mode B locomotion)
+  float sL = sin(uStepPhase);
+  float sR = -sL;
+  float cL = cos(uStepPhase);
+  p.y += (max(0.0, sL) * aStepL + max(0.0, sR) * aStepR) * uStepAmp * 26.0;
+  p.x += (cL * aStepL - cL * aStepR) * uStepAmp * 12.0;
 
   // ribcage: lift and widen around the chest only. The weight fades out by the
   // elbows so the forelegs and paws stay planted instead of the whole cat
@@ -93,8 +105,14 @@ varying vec2 vUv;
 
 vec2 gazeUv(vec2 uv, vec2 c, vec2 r) {
   vec2 d = (uv - c) / r;
-  float m = 1.0 - smoothstep(0.6, 1.0, length(d));
-  return uv + uGaze * 0.007 * m;
+  float dist = length(d);
+  // uEyeLRad/uEyeRRad are multiplied by eyeRadiusScale (2.1), so the actual
+  // iris boundary sits at dist ~ 0.47 and the dark eyeliner rim sits at 0.50..0.65.
+  // Confining the warp strictly inside dist < 0.45 prevents the black eyelid rim
+  // from ever being dragged into the eyeball or folding UV space when looking down.
+  float m = 1.0 - smoothstep(0.10, 0.45, dist);
+  vec2 g = clamp(uGaze, vec2(-1.0), vec2(1.0));
+  return uv - g * r * 0.165 * m;
 }
 
 void main() {
@@ -120,6 +138,7 @@ export class PetRig2D {
   constructor(container) {
     this.container = container;
     this.disposed = false;
+    this.poseCache = new Map();
     this.params = {
       angleX: 0, angleY: 0, angleZ: 0, breath: 0, eyeOpen: 1,
       earL: 0, earR: 0, tail: 0, alpha: 1,
@@ -127,6 +146,10 @@ export class PetRig2D {
     this.t = 0;
     this.breathPhase = 0;
     this.tailPhase = 0;
+    this.stepPhase = 0;
+    this.stepAmp = 0;
+    this.stepAmpTarget = 0;
+    this.stepSpeed = 11.5;
     this.clock = performance.now();
     this.blink = 0;
     this.blinkTimer = 2 + Math.random() * 3;
@@ -147,8 +170,8 @@ export class PetRig2D {
       if (this.disposed || !this.container) return;
       const rect = this.container.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
-      const nx = Math.max(-1.3, Math.min(1.3, ((e.clientX - (rect.left + rect.width * 0.5)) / (rect.width * 0.6))));
-      const ny = Math.max(-1.0, Math.min(1.0, ((e.clientY - (rect.top + rect.height * 0.42)) / (rect.height * 0.6))));
+      const nx = Math.max(-1.0, Math.min(1.0, ((e.clientX - (rect.left + rect.width * 0.5)) / (rect.width * 0.65))));
+      const ny = Math.max(-0.85, Math.min(0.85, ((e.clientY - (rect.top + rect.height * 0.42)) / (rect.height * 0.65))));
       this.mouseGazeX = nx;
       this.mouseGazeY = ny;
       this.lastMouseAt = performance.now();
@@ -167,7 +190,16 @@ export class PetRig2D {
     requestAnimationFrame(this.animate);
   }
 
-  async load(texUrl, meta, closedTexUrl) {
+  setLocomotion(active, speed = 11.5) {
+    this.stepAmpTarget = active ? 1.0 : 0.0;
+    this.stepSpeed = speed;
+  }
+
+  async _buildPose(texUrl, meta, closedTexUrl) {
+    const cacheKey = `${texUrl}|${closedTexUrl}`;
+    let cached = this.poseCache.get(cacheKey);
+    if (cached) return cached;
+
     const loader = new THREE.TextureLoader();
     const [tex, texClosed] = await Promise.all([loader.loadAsync(texUrl), loader.loadAsync(closedTexUrl)]);
     for (const t of [tex, texClosed]) {
@@ -190,8 +222,6 @@ export class PetRig2D {
     if (!eyeL || !eyeR) throw new Error('skin meta needs two eye landmarks');
     const eyeTY = ((eyeL.cy + eyeR.cy) * 0.5) - oy;
 
-    // rig landmarks are authored in the original matte image; weights live in
-    // texture space, pivots in world space (y up)
     const texPoint = ([x, y]) => [x - ox, y - oy];
     const worldPoint = ([x, y]) => new THREE.Vector2(x - ox, -(y - oy));
     const ears = (rig.ears || []).map((e) => {
@@ -207,9 +237,8 @@ export class PetRig2D {
     const [breathCx, breathCy] = texPoint(breath.center);
     const tail = rig.tail || null;
 
-    // grid in texture-pixel space with y flipped into world space (y up)
     const pos = [], uv = [], idx = [];
-    const wHead = [], wBreath = [], wTail = [], wEarL = [], wEarR = [], wPawL = [], wPawR = [];
+    const wHead = [], wBreath = [], wTail = [], wEarL = [], wEarR = [], wPawL = [], wPawR = [], wStepL = [], wStepR = [];
 
     for (let j = 0; j <= ROWS; j++) {
       for (let i = 0; i <= COLS; i++) {
@@ -239,6 +268,13 @@ export class PetRig2D {
           : 0;
         const breathW = gauss(x, y, breathCx, breathCy, breath.sigma[0], breath.sigma[1])
           * smoothstep(breath.fade[0] - oy, breath.fade[1] - oy, y);
+
+        // Lower-body alternating step weights for perspective walk/run gait (Mode A & Mode B)
+        const lowerBody = smoothstep(H * 0.62, H * 0.86, y) * (1 - head) * (1 - tailW * 0.8);
+        const midX = W * 0.48;
+        const stepL = lowerBody * smoothstep(midX + 18, midX - 24, x);
+        const stepR = lowerBody * smoothstep(midX - 18, midX + 24, x);
+
         wHead.push(head);
         wBreath.push(breathW);
         wTail.push(tailW);
@@ -246,6 +282,8 @@ export class PetRig2D {
         wEarR.push(earR * head);
         wPawL.push(pawL);
         wPawR.push(pawR);
+        wStepL.push(stepL);
+        wStepR.push(stepR);
       }
     }
     for (let j = 0; j < ROWS; j++) {
@@ -268,6 +306,8 @@ export class PetRig2D {
     geo.setAttribute('aEarR', new THREE.Float32BufferAttribute(wEarR, 1));
     geo.setAttribute('aPawL', new THREE.Float32BufferAttribute(wPawL, 1));
     geo.setAttribute('aPawR', new THREE.Float32BufferAttribute(wPawR, 1));
+    geo.setAttribute('aStepL', new THREE.Float32BufferAttribute(wStepL, 1));
+    geo.setAttribute('aStepR', new THREE.Float32BufferAttribute(wStepR, 1));
     geo.setIndex(idx);
 
     const mat = new THREE.ShaderMaterial({
@@ -292,6 +332,8 @@ export class PetRig2D {
         uPawPivotR: { value: paws.length >= 2 ? paws[1].pivot : neck.clone() },
         uPawAngleL: { value: 0 },
         uPawAngleR: { value: 0 },
+        uStepPhase: { value: 0 },
+        uStepAmp: { value: 0 },
         uEyeLUv: { value: new THREE.Vector2((eyeL.cx - ox) / W, (eyeL.cy - oy) / H) },
         uEyeRUv: { value: new THREE.Vector2((eyeR.cx - ox) / W, (eyeR.cy - oy) / H) },
         uEyeLRad: { value: new THREE.Vector2(eyeL.rx * rig.eyeRadiusScale / W, eyeL.ry * rig.eyeRadiusScale / H) },
@@ -302,22 +344,32 @@ export class PetRig2D {
       },
     });
 
-    this.mesh = new THREE.Mesh(geo, mat);
-    if (this.oldMesh) {
-      this.scene.remove(this.oldMesh);
-      this.oldMesh.geometry?.dispose();
-      this.oldMaterial?.uniforms?.uTex?.value?.dispose();
-      this.oldMaterial?.uniforms?.uTexClosed?.value?.dispose();
-      this.oldMaterial?.dispose();
+    const mesh = new THREE.Mesh(geo, mat);
+    cached = { mesh, mat, W, H, meta };
+    this.poseCache.set(cacheKey, cached);
+    return cached;
+  }
+
+  async preload(texUrl, meta, closedTexUrl) {
+    return this._buildPose(texUrl, meta, closedTexUrl);
+  }
+
+  async load(texUrl, meta, closedTexUrl) {
+    const cached = await this._buildPose(texUrl, meta, closedTexUrl);
+    if (this.disposed) return cached.meta;
+
+    if (this.mesh && this.mesh !== cached.mesh) {
+      this.scene.remove(this.mesh);
     }
-    this.oldMesh = this.mesh;
-    this.oldMaterial = mat;
-    this.material = mat;
-    this.scene.add(this.mesh);
-    this.size = new THREE.Vector2(W, H);
+    this.mesh = cached.mesh;
+    this.material = cached.mat;
+    if (!this.mesh.parent) {
+      this.scene.add(this.mesh);
+    }
+    this.size = new THREE.Vector2(cached.W, cached.H);
     this.setViewport(this.container.clientWidth || 140, this.container.clientHeight || 140);
     this.ready = true;
-    return meta;
+    return cached.meta;
   }
 
   setViewport(cssW, cssH) {
@@ -360,6 +412,14 @@ export class PetRig2D {
     const sb = this.sleepBlend;
     const awake = 1 - sb;
 
+    // Locomotion stepping phase & amplitude
+    this.stepAmp += (this.stepAmpTarget - this.stepAmp) * (dt === 0 ? 1 : Math.min(1, dt * 10));
+    if (this.stepAmp > 0.01) {
+      this.stepPhase = (this.stepPhase + dt * this.stepSpeed) % (Math.PI * 2);
+    }
+    u.uStepPhase.value = this.stepPhase;
+    u.uStepAmp.value = this.stepAmp;
+
     this.blinkTimer -= dt;
     let blinkTarget = 0;
     if (this.blinkTimer <= 0) {
@@ -377,14 +437,15 @@ export class PetRig2D {
       ? smoothstep(0, 1, phase / 0.35)
       : 1 - smoothstep(0, 1, (phase - 0.35) / 0.65);
 
-    this.tailPhase = (this.tailPhase || 0) + dt * (1.15 - sb * 0.5);
+    this.tailPhase = (this.tailPhase || 0) + dt * (1.15 - sb * 0.5 + this.stepAmp * 2.4);
     const sway = Math.sin(t * 0.53) * (1 - sb * 0.75);
-    const headBob = Math.sin(t * 0.8 + 0.6) * awake + Math.sin(t * 0.6) * 0.35 * sb;
+    const runHeadBob = Math.sin(this.stepPhase * 2) * 0.45 * this.stepAmp;
+    const headBob = Math.sin(t * 0.8 + 0.6) * awake + Math.sin(t * 0.6) * 0.35 * sb + runHeadBob;
     const flickL = (Math.sin(t * 0.9) * 0.5 + 0.5 > 0.985 ? Math.sin(t * 34) * 0.16 : 0) * awake;
     const flickR = (Math.sin(t * 0.7 + 2.1) * 0.5 + 0.5 > 0.985 ? Math.sin(t * 31 + 1) * 0.16 : 0) * awake;
 
     const deg = Math.PI / 180;
-    const angleZ = (p.angleZ + sway * 0.25 + sb * 0.22 + this.pulse * 0.6) * 7 * deg;
+    const angleZ = (p.angleZ + sway * 0.25 + sb * 0.22 + this.pulse * 0.6 + Math.sin(this.stepPhase) * 0.35 * this.stepAmp) * 7 * deg;
     const angleX = p.angleX + sway * 0.25;
     const angleY = p.angleY + headBob * 0.5 + sb * 0.75 + this.nod * 1.5;
 
@@ -395,31 +456,33 @@ export class PetRig2D {
     }
     u.uHeadShift.value.set(angleX * 14, -angleY * 9 + (breath - 0.5) * 3);
     u.uHeadSquash.value = Math.abs(angleX) * 0.03;
-    u.uBreath.value = breath * (1 + this.pulse * 0.3);
-    u.uTailSway.value = Math.sin(this.tailPhase) * (0.55 - sb * 0.42) + this.pulse * 0.5;
+    u.uBreath.value = breath * (1 + this.pulse * 0.3 + this.stepAmp * 0.25);
+    u.uTailSway.value = Math.sin(this.tailPhase) * (0.55 - sb * 0.42 + this.stepAmp * 0.35) + this.pulse * 0.5;
     u.uEarAngleL.value = (p.earL + sb * 0.42 + flickL) * 0.55;
     u.uEarAngleR.value = -(p.earR + sb * 0.42 + flickR) * 0.55;
 
-    // Front paws: playful curled-fist knead in side-lying or gentle stretch in belly-up
-    const pawAmp = (0.075 - sb * 0.045) + this.pulse * 0.14;
-    u.uPawAngleL.value = Math.sin(this.tailPhase * 1.25 + 0.4) * pawAmp;
-    u.uPawAngleR.value = -Math.sin(this.tailPhase * 1.1 + 1.5) * pawAmp;
+    // Front paws: playful curled-fist knead in side-lying, gentle stretch in belly-up,
+    // or active alternating stride swing when running/trotting
+    const pawIdleAmp = (0.075 - sb * 0.045) + this.pulse * 0.14;
+    const pawRunSwing = Math.sin(this.stepPhase) * 0.22 * this.stepAmp;
+    u.uPawAngleL.value = Math.sin(this.tailPhase * 1.25 + 0.4) * pawIdleAmp * (1 - this.stepAmp) + pawRunSwing;
+    u.uPawAngleR.value = -Math.sin(this.tailPhase * 1.1 + 1.5) * pawIdleAmp * (1 - this.stepAmp) - pawRunSwing;
 
     // Autonomous gaze cycling: look at camera (0,0) <-> look away elsewhere <-> drowsy eye-close
     this.gazeTimer -= dt;
     if (this.gazeTimer <= 0) {
       const r = Math.random();
-      if (r < 0.42) {
-        // Look straight at the viewer / camera
+      if (r < 0.44 || this.stepAmp > 0.2) {
+        // Look straight at the viewer / camera (always alert while running)
         this.autoGazeTargetX = 0;
         this.autoGazeTargetY = 0;
         this.autoDrowsyTarget = 0;
         this.gazeTimer = 2.6 + Math.random() * 2.8;
-      } else if (r < 0.78) {
-        // Glance away to the side / elsewhere
+      } else if (r < 0.80) {
+        // Glance away to the side / elsewhere (moderate range so eyes stay natural)
         const dirX = Math.random() < 0.5 ? -1 : 1;
-        this.autoGazeTargetX = dirX * (0.75 + Math.random() * 0.55);
-        this.autoGazeTargetY = (Math.random() - 0.5) * 0.9;
+        this.autoGazeTargetX = dirX * (0.55 + Math.random() * 0.35);
+        this.autoGazeTargetY = (Math.random() - 0.5) * 0.55;
         this.autoDrowsyTarget = 0;
         this.gazeTimer = 2.2 + Math.random() * 2.6;
       } else {
@@ -431,14 +494,16 @@ export class PetRig2D {
     const mouseActive = (performance.now() - this.lastMouseAt) < 2200;
     const targetGX = mouseActive ? this.mouseGazeX : this.autoGazeTargetX;
     const targetGY = mouseActive ? this.mouseGazeY : this.autoGazeTargetY;
-    const targetDrowsy = mouseActive ? 0 : this.autoDrowsyTarget;
+    const targetDrowsy = (mouseActive || this.stepAmp > 0.1) ? 0 : this.autoDrowsyTarget;
     const gazeLerp = dt === 0 ? 1 : Math.min(1, dt * 5.5);
     this.autoGazeX += (targetGX - this.autoGazeX) * gazeLerp;
     this.autoGazeY += (targetGY - this.autoGazeY) * gazeLerp;
     this.autoDrowsy += (targetDrowsy - this.autoDrowsy) * (dt === 0 ? 1 : Math.min(1, dt * 4.5));
 
-    u.uEyeOpen.value = Math.min(p.eyeOpen, 1 - Math.max(this.blink, sb, this.autoDrowsy));
-    u.uGaze.value.set((p.gazeX || 0) + this.autoGazeX + angleX * 0.9, (p.gazeY || 0) + this.autoGazeY - angleY * 0.9);
+    u.uEyeOpen.value = Math.min(p.eyeOpen, 1 - Math.max(this.blink, sb * (1 - this.stepAmp), this.autoDrowsy));
+    const gx = Math.max(-0.95, Math.min(0.95, (p.gazeX || 0) + this.autoGazeX + angleX * 0.55));
+    const gy = Math.max(-0.85, Math.min(0.85, (p.gazeY || 0) + this.autoGazeY - angleY * 0.45));
+    u.uGaze.value.set(gx, gy);
     u.uAlpha.value = p.alpha;
 
     this.renderer.render(this.scene, this.camera);
@@ -459,6 +524,13 @@ export class PetRig2D {
   dispose() {
     this.disposed = true;
     window.removeEventListener('mousemove', this.onMouseMove);
+    for (const entry of this.poseCache.values()) {
+      entry.mesh?.geometry?.dispose();
+      entry.mat?.uniforms?.uTex?.value?.dispose();
+      entry.mat?.uniforms?.uTexClosed?.value?.dispose();
+      entry.mat?.dispose();
+    }
+    this.poseCache.clear();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

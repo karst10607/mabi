@@ -229,6 +229,7 @@ body.skin-rig .pet-shadow {
   justify-content: center;
   align-items: center;
   position: relative;
+  overflow: visible;
   cursor: grab;
 }
 
@@ -308,6 +309,17 @@ body.posture-belly .pet-shadow {
   width: 92px;
   height: 16px;
   margin-top: -12px;
+}
+
+body.posture-run .pet-graphic.rig-mode {
+  width: 158px;
+  height: 202px;
+}
+
+body.posture-run .pet-shadow {
+  width: 104px;
+  height: 14px;
+  margin-top: -10px;
 }
 
 /* Screen-edge hopping. The main process moves the window; these classes add
@@ -396,30 +408,32 @@ body.roam-land .pet-graphic {
   border: 1px solid var(--border-glass);
   backdrop-filter: blur(20px);
   border-radius: var(--radius-lg);
-  padding: 6px 8px;
+  padding: 5px 6px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 4px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.3);
   z-index: 10;
 }
 
 .pet-stats {
   display: flex;
-  gap: 5px;
+  gap: 3px;
+  flex-shrink: 0;
 }
 
 .stat-pill {
   display: flex;
   align-items: center;
-  gap: 3px;
-  font-size: 11px;
+  gap: 1.5px;
+  font-size: 10px;
   font-weight: 600;
   color: var(--text-muted);
 }
 
 .stat-icon {
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .stat-val {
@@ -429,15 +443,17 @@ body.roam-land .pet-graphic {
 
 .pet-action-buttons {
   display: flex;
-  gap: 3px;
+  gap: 2px;
+  flex-shrink: 0;
 }
 
 .dock-btn {
   background: var(--bg-glass-card);
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-pill);
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
+  font-size: 11px;
   display: flex;
   align-items: center;
   justify-content: center;

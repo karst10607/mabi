@@ -2,6 +2,9 @@ const { app, BrowserWindow, ipcMain, globalShortcut, screen, Tray, Menu, nativeI
 const path = require('path');
 const fs = require('fs');
 
+app.commandLine.appendSwitch('disable-domain-blocking-for-3d-apis');
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+
 // Enable transparent visuals for Linux compatibility
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('enable-transparent-visuals');
