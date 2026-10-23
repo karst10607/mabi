@@ -74,23 +74,31 @@ class PetEngine {
     this.affection = parseInt(localStorage.getItem('aurapet_affection') || '88', 10);
     this.energy = parseInt(localStorage.getItem('aurapet_energy') || '95', 10);
     this.state = 'idle'; // idle, blink, happy, eating, thinking, sleepy
+    const savedPosture = localStorage.getItem('aurapet_posture');
+    this.posture = ['sit', 'doze', 'rest', 'sleep'].includes(savedPosture) ? savedPosture : 'sit';
+    this.loadedRigPose = null;
+    this.lastInteractionAt = Date.now();
     
     this.audioCtx = null;
     this.speechTimer = null;
     this.blinkInterval = null;
+    this.sleepParticleInterval = null;
     this.rig2d = null;
     this.rigToken = 0;
     this.roamClassTimer = null;
+    window.petEngine = this;
 
     this.init();
   }
 
   init() {
+    this.syncPostureUI();
     this.renderSkin();
     this.updateStatsDisplay();
     this.setupInteractions();
     this.setupRoam();
     this.startBlinkingLoop();
+    this.startSleepParticleLoop();
     this.startAutoSpeechLoop();
 
     // Show initial welcome speech
@@ -168,7 +176,7 @@ class PetEngine {
   // SVG Skins Generation
   renderSkin() {
     if (!this.container) return;
-    this.disposeRig();
+    if (!this.isRigSkin()) this.disposeRig();
 
     if (this.petNameBadge) {
       this.petNameBadge.textContent = `${this.nickname} ✦`;
@@ -419,6 +427,12 @@ class PetEngine {
     }
 
     const isRig = this.isRigSkin();
+    if (isRig && this.rig2d && !this.rig2d.disposed && document.getElementById('rig2d-host')) {
+      this.container.classList.add('rig-mode');
+      document.body.classList.add('skin-rig');
+      this.mountRig(this.skin);
+      return;
+    }
     this.container.innerHTML = svgHtml;
     this.container.classList.toggle('rig-mode', isRig);
     document.body.classList.toggle('skin-rig', isRig);
@@ -483,26 +497,135 @@ class PetEngine {
     return next;
   }
 
+  isRestPose(posture = this.posture) {
+    return posture === 'rest' || posture === 'sleep';
+  }
+
+  isSleepyPosture(posture = this.posture) {
+    return posture === 'doze' || posture === 'sleep';
+  }
+
+  syncPostureUI() {
+    const isRest = this.isRestPose();
+    const isSleepy = this.isSleepyPosture();
+    document.body.classList.toggle('posture-rest', isRest);
+    document.body.classList.toggle('posture-sleepy', isSleepy);
+
+    const btnRest = document.getElementById('btn-pet-rest');
+    const iconEl = document.getElementById('rest-btn-icon');
+    if (btnRest) {
+      btnRest.classList.toggle('active-posture', this.posture !== 'sit');
+      const labels = {
+        sit: '目前：坐姿清醒（點擊切換為打瞌睡）',
+        doze: '目前：坐姿打瞌睡 [方案A]（點擊切換為趴下休息）',
+        rest: '目前：趴下休息 [方案B]（點擊切換為趴睡）',
+        sleep: '目前：趴下熟睡 [方案A+B]（點擊喚醒回坐姿）',
+      };
+      btnRest.title = labels[this.posture] || '切換休息姿態';
+    }
+    if (iconEl) {
+      const icons = { sit: '💤', doze: '😪', rest: '🐾', sleep: '🌙' };
+      iconEl.textContent = icons[this.posture] || '💤';
+    }
+  }
+
+  setPosture(newPosture, opts = {}) {
+    if (!['sit', 'doze', 'rest', 'sleep'].includes(newPosture)) newPosture = 'sit';
+    const prevPose = this.isRestPose(this.posture) ? 'rest' : 'sit';
+    this.posture = newPosture;
+    localStorage.setItem('aurapet_posture', newPosture);
+    this.syncPostureUI();
+
+    const nextPose = this.isRestPose(newPosture) ? 'rest' : 'sit';
+    const isSleepy = this.isSleepyPosture(newPosture);
+
+    if (this.isRigSkin()) {
+      if (this.rig2d && this.loadedRigPose === nextPose && this.loadedRigSkin === this.skin) {
+        this.rig2d.setSleepy(isSleepy);
+        const host = document.getElementById('rig2d-host');
+        if (host) this.rig2d.setViewport(host.clientWidth, host.clientHeight);
+      } else {
+        this.mountRig(this.skin);
+      }
+    } else {
+      this.setState(isSleepy ? 'blink' : 'idle', 0);
+    }
+
+    if (!opts.silent) {
+      const isDog = this.skin === 'kk2d' || this.skin === 'shiba';
+      const lines = {
+        sit: `睡飽飽精神百倍！${this.userTitle}我們繼續加油 ✨`,
+        doze: '呼嚕… 眼皮有點重，坐著打個小盹 😪💤',
+        rest: isDog ? '趴下來乘涼休息一下，還是看著你哦 🐾' : '折手手母雞蹲休息一下～ 🐾',
+        sleep: isDog ? '趴著瞇一下最舒服了… 呼嚕呼嚕 🌙💤' : '母雞蹲閉眼熟睡中… 呼嚕呼嚕 🌙💤',
+      };
+      this.say(lines[newPosture], 3200);
+    }
+  }
+
+  cyclePosture() {
+    this.lastInteractionAt = Date.now();
+    const order = ['sit', 'doze', 'rest', 'sleep'];
+    const idx = order.indexOf(this.posture);
+    const next = order[(idx + 1) % order.length];
+    this.playSound('pop');
+    if (next === 'doze' || next === 'sleep') {
+      this.spawnParticle('💤');
+    } else if (next === 'rest') {
+      this.spawnParticle('🐾');
+    } else {
+      this.spawnParticle('✨');
+    }
+    this.setPosture(next);
+    return next;
+  }
+
+  startSleepParticleLoop() {
+    clearInterval(this.sleepParticleInterval);
+    this.sleepParticleInterval = setInterval(() => {
+      if (this.isSleepyPosture()) {
+        this.spawnParticle('💤');
+      } else {
+        // Auto-transition to doze/sleep after long idle
+        const idleMs = Date.now() - (this.lastInteractionAt || Date.now());
+        if (this.posture === 'sit' && idleMs > 180000) {
+          this.setPosture('doze', { silent: true });
+        } else if (this.posture === 'rest' && idleMs > 180000) {
+          this.setPosture('sleep', { silent: true });
+        }
+      }
+    }, 3800);
+  }
+
   async mountRig(skinId = this.skin) {
     const cfg = RIG_SKINS[skinId];
     if (!cfg) return;
-    const token = this.rigToken;
+    const token = ++this.rigToken;
     const host = document.getElementById('rig2d-host');
     if (!host) return;
     try {
       const { PetRig2D } = await import('./rig2d.js');
-      const meta = (await import(`${cfg.dir}/${cfg.prefix}_meta.js`)).default;
+      const useRest = this.isRestPose();
+      const basePrefix = useRest ? `${cfg.prefix}_rest` : cfg.prefix;
+      const meta = (await import(`${cfg.dir}/${basePrefix}_meta.js`)).default;
       if (token !== this.rigToken) return;
-      const rig = new PetRig2D(host);
+      let rig = this.rig2d;
+      if (!rig || rig.disposed) {
+        host.innerHTML = '';
+        rig = new PetRig2D(host);
+        this.rig2d = rig;
+        window.rig2d = rig;
+      }
       await rig.load(
-        `${cfg.dir}/${cfg.prefix}_tex.png`,
+        `${cfg.dir}/${basePrefix}_tex.png`,
         meta,
-        `${cfg.dir}/${cfg.prefix}_tex_closed.png`
+        `${cfg.dir}/${basePrefix}_tex_closed.png`
       );
-      if (token !== this.rigToken) { rig.dispose(); return; }
+      if (token !== this.rigToken) return;
+      rig.setSleepy(this.isSleepyPosture());
       rig.setViewport(host.clientWidth, host.clientHeight);
-      this.rig2d = rig;
-      window.rig2d = rig;
+      this.loadedRigPose = useRest ? 'rest' : 'sit';
+      this.loadedRigSkin = skinId;
     } catch (err) {
       console.error('2D pet rig failed to load', err);
     }
@@ -510,6 +633,7 @@ class PetEngine {
 
   disposeRig() {
     ++this.rigToken;
+    this.loadedRigPose = null;
     if (this.rig2d) {
       this.rig2d.dispose();
       this.rig2d = null;
@@ -543,6 +667,9 @@ class PetEngine {
 
     const btnPlay = document.getElementById('btn-pet-play');
     if (btnPlay) btnPlay.addEventListener('click', () => this.play());
+
+    const btnRest = document.getElementById('btn-pet-rest');
+    if (btnRest) btnRest.addEventListener('click', () => this.cyclePosture());
   }
 
   setupRoam() {
@@ -584,6 +711,9 @@ class PetEngine {
 
   // Pat the pet
   pat(clickX, clickY) {
+    this.lastInteractionAt = Date.now();
+    if (this.posture === 'doze') this.setPosture('sit', { silent: true });
+    else if (this.posture === 'sleep') this.setPosture('rest', { silent: true });
     this.playSound('pat');
     if (window.electronAPI && window.electronAPI.notifyPetActivity) {
       window.electronAPI.notifyPetActivity();
@@ -612,6 +742,9 @@ class PetEngine {
 
   // Feed the pet
   feed() {
+    this.lastInteractionAt = Date.now();
+    if (this.posture === 'doze') this.setPosture('sit', { silent: true });
+    else if (this.posture === 'sleep') this.setPosture('rest', { silent: true });
     this.playSound('feed');
     if (window.electronAPI && window.electronAPI.notifyPetActivity) {
       window.electronAPI.notifyPetActivity();
@@ -628,6 +761,8 @@ class PetEngine {
 
   // Play with pet
   play() {
+    this.lastInteractionAt = Date.now();
+    if (this.posture !== 'sit') this.setPosture('sit', { silent: true });
     this.playSound('pop');
     if (window.electronAPI && window.electronAPI.notifyPetActivity) {
       window.electronAPI.notifyPetActivity();

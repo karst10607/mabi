@@ -1,0 +1,30 @@
+{
+  "bodyPlan": "quadruped",
+  "eyes": [
+    { "cx": 538.5, "cy": 333.2, "rx": 15.0, "ry": 13.5, "px": 939 },
+    { "cx": 690.1, "cy": 333.0, "rx": 15.0, "ry": 13.5, "px": 832 }
+  ],
+  "neck": {
+    "row": 490,
+    "cx": 614.3
+  },
+  "head": {
+    "fullAboveNeck": 75,
+    "zeroBelowNeck": 32,
+    "xSpan": [185, 255]
+  },
+  "breath": {
+    "center": [614, 585],
+    "sigma": [210, 110],
+    "fade": [695, 625]
+  },
+  "ears": [
+    { "center": [475, 195], "pivot": [495, 260], "sigma": [65, 85] },
+    { "center": [745, 195], "pivot": [725, 260], "sigma": [65, 85] }
+  ],
+  "tail": {
+    "x": [395, 220],
+    "y": [625, 745]
+  },
+  "eyeRadiusScale": 2.1
+}

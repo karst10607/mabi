@@ -2,6 +2,23 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.2.0] - 2026-10-23
+
+### Added
+
+- 實作寵物「打瞌睡（方案 A）」與「趴下休息（方案 B）」四階段姿態循環（`sit` 坐姿清醒 → `doze` 坐姿打瞌睡 → `rest` 趴下休息 → `sleep` 趴下熟睡）：
+  - **方案 A（原地低頭閉眼打瞌睡）**：`renderer/rig2d.js` 新增 `setSleepy()` 與 `sleepBlend` 平滑過渡（閉眼、低頭縮脖、微傾頭、耳朵放鬆下垂、慢速深呼吸與 `💤` 粒子特效）。
+  - **方案 B（專屬趴姿休息模型）**：為三隻角色新增趴姿（貓咪母雞蹲／狗狗趴地）貼圖、閉眼貼圖與骨架設定：
+    - 條碼：`renderer/models/cat2d/cat_rest_*`
+    - 阿咪：`renderer/models/ami2d/ami_rest_*`
+    - KK：`renderer/models/kk2d/kk_rest_*`
+  - 底部快捷列新增休息切換按鈕（`#btn-pet-rest`：`💤` / `😪` / `🐾` / `🌙`），支援一鍵切換四種姿態，以及待機滿 3 分鐘自動進入打瞌睡／熟睡、互動時自動喚醒。
+- `tools/make_tex.py` 支援 `neck.cx` 手動指定脖子水平中心；`renderer/rig2d.js` 支援 `head.xSpan` 眼線以下水平權重遮罩，避免趴姿轉頭或低頭時拉扯到拱起的背部與後腿。
+
+### Fixed
+
+- 修正連續切換角色或姿態時重複建立 `THREE.WebGLRenderer` 導致 Chromium 觸發 WebGL context loss 封鎖（畫面變空白）的問題，改為單一 `PetRig2D` WebGL context 動態替換網格與貼圖。
+
 ## [1.1.0] - 2026-10-23
 
 ### Added

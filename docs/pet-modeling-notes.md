@@ -197,8 +197,14 @@ hy3d-venv/Scripts/python.exe mab/tools/make_closed.py \
   - `cat2d`：條碼（棕黑虎斑貓，`renderer/models/cat2d/`）
   - `ami2d`：阿咪（橘色虎斑貓 + 粉紅鈴鐺項圈，`renderer/models/ami2d/`）
   - `kk2d`：KK（台灣黑犬／歐告 + 白霜嘴吻 + 淺藍項圈，`renderer/models/kk2d/`）
-- **快速切換與移除角色**：
+- **快速切換角色與休息姿態（方案 A + 方案 B）**：
   - 直接點擊寵物視窗底部的**名字標籤**（`#pet-name-badge`）即可在未移除的寵物角色間循環切換，並自動同步預設名字與圖示。
+  - 點擊底部快捷列的 **`💤` 休息按鈕**（`#btn-pet-rest`），可循環切換四種姿態：
+    1. `sit`（坐姿清醒）
+    2. `doze`（**方案 A**：坐姿低頭閉眼打瞌睡，`PetRig2D.setSleepy(true)` 驅動低頭、耳朵放鬆、閉眼與慢呼吸）
+    3. `rest`（**方案 B**：切換為 `*_rest_*` 母雞蹲／趴地貼圖與骨架，張眼趴著休息）
+    4. `sleep`（**方案 A + B**：趴姿閉眼熟睡 + `💤` 粒子特效）
+  - 趴姿模型在 `*_rest_rig.json` 中使用 `neck: { row, cx }` 指定脖子中心，並透過 `head.xSpan: [fullHalfW, zeroHalfW]` 限制眼線以下的水平頭部權重，避免轉頭時拉動拱起的貓背或後腿。
   - 在「設定 → 寵物外觀」中，每個角色卡片右上角都有 `✕` 移除按鈕，可將不想要的角色從切換清單與外觀選單隱藏（儲存於 `localStorage.aurapet_hidden_skins`），底部亦提供「恢復全部角色」按鈕。
 - `index.html` 加了 import map，讓 `rig2d.js` 在 `file://` 下能解析 `import 'three'`。
 - `pet.js` 動態 `import('./rig2d.js')`，`mountRig(skinId)` / `disposeRig()` 成對呼叫，

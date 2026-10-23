@@ -271,6 +271,17 @@ body.skin-rig .pet-shadow {
   filter: none;
 }
 
+body.posture-rest .pet-graphic.rig-mode {
+  width: 178px;
+  height: 184px;
+}
+
+body.posture-rest .pet-shadow {
+  width: 112px;
+  height: 14px;
+  margin-top: -10px;
+}
+
 /* Screen-edge hopping. The main process moves the window; these classes add
    the crouch/stretch a moving rectangle cannot show and keep the idle float
    from fighting the arc. */
@@ -357,7 +368,7 @@ body.roam-land .pet-graphic {
   border: 1px solid var(--border-glass);
   backdrop-filter: blur(20px);
   border-radius: var(--radius-lg);
-  padding: 6px 10px;
+  padding: 6px 8px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -367,20 +378,20 @@ body.roam-land .pet-graphic {
 
 .pet-stats {
   display: flex;
-  gap: 8px;
+  gap: 5px;
 }
 
 .stat-pill {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
 }
 
 .stat-icon {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .stat-val {
@@ -390,20 +401,26 @@ body.roam-land .pet-graphic {
 
 .pet-action-buttons {
   display: flex;
-  gap: 4px;
+  gap: 3px;
 }
 
 .dock-btn {
   background: var(--bg-glass-card);
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-pill);
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.dock-btn.active-posture {
+  background: rgba(99, 102, 241, 0.28);
+  border-color: rgba(129, 140, 248, 0.65);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.35);
 }
 
 .dock-btn:hover {

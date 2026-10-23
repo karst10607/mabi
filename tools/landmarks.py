@@ -38,9 +38,16 @@ def main():
     comp.paste(im, (0, 0), im)
     d = ImageDraw.Draw(comp)
 
-    neck_row = rig.get("neck", {}).get("row")
+    neck_cfg = rig.get("neck", {})
+    neck_row = neck_cfg.get("row")
     if neck_row is not None:
         d.line([(0, neck_row), (im.width, neck_row)], fill=(255, 60, 60), width=2)
+        neck_cx = neck_cfg.get("cx", im.width / 2)
+        x_span = rig.get("head", {}).get("xSpan")
+        if x_span and len(x_span) == 2:
+            for dx, col in [(x_span[0], (255, 100, 100)), (x_span[1], (180, 40, 40))]:
+                d.line([(neck_cx - dx, 0), (neck_cx - dx, neck_row + 60)], fill=col, width=2)
+                d.line([(neck_cx + dx, 0), (neck_cx + dx, neck_row + 60)], fill=col, width=2)
 
     for e in rig.get("ears", []):
         ellipse(d, e["center"], e["sigma"], (0, 255, 80))

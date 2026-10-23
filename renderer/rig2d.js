@@ -117,6 +117,8 @@ export class PetRig2D {
     this.clock = performance.now();
     this.blink = 0;
     this.blinkTimer = 2 + Math.random() * 3;
+    this.sleepy = false;
+    this.sleepBlend = 0;
 
     this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, premultipliedAlpha: false });
     this.renderer.setPixelRatio(window.devicePixelRatio || 1);
@@ -146,10 +148,12 @@ export class PetRig2D {
     if (!rig) throw new Error('skin meta is missing "rig"');
     const W = meta.texW, H = meta.texH;
     const ox = meta.origin[0], oy = meta.origin[1];
+    const neckTX = meta.neck.cx - ox;
     const neckTY = meta.neck.y - oy;
-    const neck = new THREE.Vector2(meta.neck.cx - ox, -neckTY);
+    const neck = new THREE.Vector2(neckTX, -neckTY);
     const eyeL = meta.eyes[0], eyeR = meta.eyes[1];
     if (!eyeL || !eyeR) throw new Error('skin meta needs two eye landmarks');
+    const eyeTY = ((eyeL.cy + eyeR.cy) * 0.5) - oy;
 
     // rig landmarks are authored in the original matte image; weights live in
     // texture space, pivots in world space (y up)
@@ -175,7 +179,12 @@ export class PetRig2D {
         pos.push(x, -y, 0);
         uv.push(i / COLS, j / ROWS);
 
-        const head = smoothstep(neckTY + rig.head.zeroBelowNeck, neckTY - rig.head.fullAboveNeck, y);
+        let head = smoothstep(neckTY + rig.head.zeroBelowNeck, neckTY - rig.head.fullAboveNeck, y);
+        if (Array.isArray(rig.head.xSpan) && rig.head.xSpan.length === 2) {
+          const xWeight = smoothstep(rig.head.xSpan[1], rig.head.xSpan[0], Math.abs(x - neckTX));
+          const belowEyes = smoothstep(eyeTY - 20, eyeTY + 60, y);
+          head *= 1 - belowEyes * (1 - xWeight);
+        }
         const earL = ears.length ? gauss(x, y, ears[0].cx, ears[0].cy, ears[0].sx, ears[0].sy) : 0;
         const earR = ears.length ? gauss(x, y, ears[1].cx, ears[1].cy, ears[1].sx, ears[1].sy) : 0;
         const tailW = tail
@@ -210,7 +219,7 @@ export class PetRig2D {
     geo.setAttribute('aEarR', new THREE.Float32BufferAttribute(wEarR, 1));
     geo.setIndex(idx);
 
-    this.material = new THREE.ShaderMaterial({
+    const mat = new THREE.ShaderMaterial({
       vertexShader: VERT,
       fragmentShader: FRAG,
       transparent: true,
@@ -237,10 +246,20 @@ export class PetRig2D {
       },
     });
 
-    this.mesh = new THREE.Mesh(geo, this.material);
+    this.mesh = new THREE.Mesh(geo, mat);
+    if (this.oldMesh) {
+      this.scene.remove(this.oldMesh);
+      this.oldMesh.geometry?.dispose();
+      this.oldMaterial?.uniforms?.uTex?.value?.dispose();
+      this.oldMaterial?.uniforms?.uTexClosed?.value?.dispose();
+      this.oldMaterial?.dispose();
+    }
+    this.oldMesh = this.mesh;
+    this.oldMaterial = mat;
+    this.material = mat;
     this.scene.add(this.mesh);
     this.size = new THREE.Vector2(W, H);
-    this.setViewport(140, 140);
+    this.setViewport(this.container.clientWidth || 140, this.container.clientHeight || 140);
     this.ready = true;
     return meta;
   }
@@ -256,6 +275,10 @@ export class PetRig2D {
     this.camera.position.set(this.size.x / 2, -this.size.y / 2, 5);
     this.camera.updateProjectionMatrix();
     this.viewScale = s;
+  }
+
+  setSleepy(flag) {
+    this.sleepy = Boolean(flag);
   }
 
   react(kind) {
@@ -282,6 +305,9 @@ export class PetRig2D {
 
     this.pulse = Math.max(0, (this.pulse || 0) - dt * 2.2);
     this.nod = Math.max(0, (this.nod || 0) - dt * 1.6);
+    this.sleepBlend += ((this.sleepy ? 1 : 0) - this.sleepBlend) * Math.min(1, dt * 3.5);
+    const sb = this.sleepBlend;
+    const awake = 1 - sb;
 
     this.blinkTimer -= dt;
     let blinkTarget = 0;
@@ -291,29 +317,30 @@ export class PetRig2D {
     }
     this.blink += (blinkTarget - this.blink) * Math.min(1, dt * 26);
 
-    // asymmetric breath: quick inhale, longer exhale, ~20 bpm at rest
-    const phase = (t % 3.2) / 3.2;
+    // asymmetric breath: quick inhale, longer exhale (~20 bpm awake, slower when dozing)
+    const breathPeriod = 3.2 + sb * 2.0;
+    const phase = (t % breathPeriod) / breathPeriod;
     const breath = phase < 0.35
       ? smoothstep(0, 1, phase / 0.35)
       : 1 - smoothstep(0, 1, (phase - 0.35) / 0.65);
-    const sway = Math.sin(t * 0.53);
-    const headBob = Math.sin(t * 0.8 + 0.6);
-    const flickL = Math.sin(t * 0.9) * 0.5 + 0.5 > 0.985 ? Math.sin(t * 34) * 0.16 : 0;
-    const flickR = Math.sin(t * 0.7 + 2.1) * 0.5 + 0.5 > 0.985 ? Math.sin(t * 31 + 1) * 0.16 : 0;
+    const sway = Math.sin(t * 0.53) * (1 - sb * 0.75);
+    const headBob = Math.sin(t * 0.8 + 0.6) * awake + Math.sin(t * 0.6) * 0.35 * sb;
+    const flickL = (Math.sin(t * 0.9) * 0.5 + 0.5 > 0.985 ? Math.sin(t * 34) * 0.16 : 0) * awake;
+    const flickR = (Math.sin(t * 0.7 + 2.1) * 0.5 + 0.5 > 0.985 ? Math.sin(t * 31 + 1) * 0.16 : 0) * awake;
 
     const deg = Math.PI / 180;
-    const angleZ = (p.angleZ + sway * 0.25 + this.pulse * 0.6) * 7 * deg;
+    const angleZ = (p.angleZ + sway * 0.25 + sb * 0.22 + this.pulse * 0.6) * 7 * deg;
     const angleX = p.angleX + sway * 0.25;
-    const angleY = p.angleY + headBob * 0.5 + this.nod * 1.5;
+    const angleY = p.angleY + headBob * 0.5 + sb * 0.75 + this.nod * 1.5;
 
     u.uHeadAngle.value += (angleZ - u.uHeadAngle.value) * Math.min(1, dt * 9);
     u.uHeadShift.value.set(angleX * 14, -angleY * 9 + (breath - 0.5) * 3);
     u.uHeadSquash.value = Math.abs(angleX) * 0.03;
     u.uBreath.value = breath * (1 + this.pulse * 0.3);
-    u.uTailSway.value = Math.sin(t * 1.15) * 0.55 + this.pulse * 0.5;
-    u.uEarAngleL.value = (p.earL + flickL) * 0.55;
-    u.uEarAngleR.value = -(p.earR + flickR) * 0.55;
-    u.uEyeOpen.value = Math.min(p.eyeOpen, 1 - this.blink);
+    u.uTailSway.value = Math.sin(t * (1.15 - sb * 0.5)) * (0.55 - sb * 0.42) + this.pulse * 0.5;
+    u.uEarAngleL.value = (p.earL + sb * 0.42 + flickL) * 0.55;
+    u.uEarAngleR.value = -(p.earR + sb * 0.42 + flickR) * 0.55;
+    u.uEyeOpen.value = Math.min(p.eyeOpen, 1 - Math.max(this.blink, sb));
     u.uGaze.value.set((p.gazeX || 0) + angleX * 0.9, (p.gazeY || 0) - angleY * 0.9);
     u.uAlpha.value = p.alpha;
 
