@@ -8,7 +8,7 @@ const ROWS = 148;
 
 const VERT = /* glsl */ `
 attribute float aHead;
-attribute float aBody;
+attribute float aBreath;
 attribute float aTail;
 attribute float aEarL;
 attribute float aEarR;
@@ -49,9 +49,12 @@ void main() {
   rel.x *= 1.0 - uHeadSquash * aHead;
   p = uNeck + rel + uHeadShift * aHead;
 
-  // chest: lift and widen a little, faded out at the very bottom
-  p.y += aBody * uBreath * 14.0;
-  p.x += (p.x - uNeck.x) * aBody * uBreath * 0.012;
+  // ribcage: lift and widen around the chest only. The weight fades out by the
+  // elbows so the forelegs and paws stay planted instead of the whole cat
+  // stretching up and down like slime.
+  float chest = aBreath * uBreath;
+  p.y += chest * 9.0;
+  p.x += (p.x - uNeck.x) * chest * 0.055;
 
   // tail sway, strongest at the very tip
   p.x += uTailSway * aTail * 34.0;
@@ -152,7 +155,7 @@ export class PetRig2D {
 
     // grid in texture-pixel space with y flipped into world space (y up)
     const pos = [], uv = [], idx = [];
-    const wHead = [], wBody = [], wTail = [], wEarL = [], wEarR = [];
+    const wHead = [], wBreath = [], wTail = [], wEarL = [], wEarR = [];
 
     for (let j = 0; j <= ROWS; j++) {
       for (let i = 0; i <= COLS; i++) {
@@ -165,8 +168,9 @@ export class PetRig2D {
         const earL = gauss(x, y, (earTips[0].x + 22 / 2), earTips[0].y + 97.5, 70, 95);
         const earR = gauss(x, y, (earTips[1].x - 50 / 2), earTips[1].y + 97.5, 70, 95);
         const tail = smoothstep(310, 165, x) * smoothstep(960, 1090, y);
+        const breath = gauss(x, y, 350, 700, 240, 180) * smoothstep(1040, 900, y);
         wHead.push(head);
-        wBody.push((1 - head) * smoothstep(0, 120, y));
+        wBreath.push(breath);
         wTail.push(tail);
         wEarL.push(earL * head);
         wEarR.push(earR * head);
@@ -186,7 +190,7 @@ export class PetRig2D {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     geo.setAttribute('aHead', new THREE.Float32BufferAttribute(wHead, 1));
-    geo.setAttribute('aBody', new THREE.Float32BufferAttribute(wBody, 1));
+    geo.setAttribute('aBreath', new THREE.Float32BufferAttribute(wBreath, 1));
     geo.setAttribute('aTail', new THREE.Float32BufferAttribute(wTail, 1));
     geo.setAttribute('aEarL', new THREE.Float32BufferAttribute(wEarL, 1));
     geo.setAttribute('aEarR', new THREE.Float32BufferAttribute(wEarR, 1));
@@ -273,21 +277,25 @@ export class PetRig2D {
     }
     this.blink += (blinkTarget - this.blink) * Math.min(1, dt * 26);
 
-    const breath = Math.sin(t * 1.7) * 0.5 + 0.5;
+    // asymmetric breath: quick inhale, longer exhale, ~20 bpm at rest
+    const phase = (t % 3.2) / 3.2;
+    const breath = phase < 0.35
+      ? smoothstep(0, 1, phase / 0.35)
+      : 1 - smoothstep(0, 1, (phase - 0.35) / 0.65);
     const sway = Math.sin(t * 0.53);
-    const headBob = Math.sin(t * 1.7 + 0.6);
+    const headBob = Math.sin(t * 0.8 + 0.6);
     const flickL = Math.sin(t * 0.9) * 0.5 + 0.5 > 0.985 ? Math.sin(t * 34) * 0.16 : 0;
     const flickR = Math.sin(t * 0.7 + 2.1) * 0.5 + 0.5 > 0.985 ? Math.sin(t * 31 + 1) * 0.16 : 0;
 
     const deg = Math.PI / 180;
-    const angleZ = (p.angleZ + sway * 0.55 + this.pulse * 0.6) * 7 * deg;
-    const angleX = p.angleX + sway * 0.5;
-    const angleY = p.angleY + headBob * 0.8 + this.nod * 1.5;
+    const angleZ = (p.angleZ + sway * 0.25 + this.pulse * 0.6) * 7 * deg;
+    const angleX = p.angleX + sway * 0.25;
+    const angleY = p.angleY + headBob * 0.5 + this.nod * 1.5;
 
     u.uHeadAngle.value += (angleZ - u.uHeadAngle.value) * Math.min(1, dt * 9);
-    u.uHeadShift.value.set(angleX * 14, -angleY * 9);
-    u.uHeadSquash.value = Math.abs(angleX) * 0.035;
-    u.uBreath.value = breath * (1 + this.pulse * 0.6);
+    u.uHeadShift.value.set(angleX * 14, -angleY * 9 + (breath - 0.5) * 3);
+    u.uHeadSquash.value = Math.abs(angleX) * 0.03;
+    u.uBreath.value = breath * (1 + this.pulse * 0.3);
     u.uTailSway.value = Math.sin(t * 1.15) * 0.55 + this.pulse * 0.5;
     u.uEarAngleL.value = (p.earL + flickL) * 0.55;
     u.uEarAngleR.value = -(p.earR + flickR) * 0.55;
