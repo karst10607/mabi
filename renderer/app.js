@@ -58,6 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const checkPetSound = document.getElementById('check-pet-sound');
   const checkAutoSpeech = document.getElementById('check-auto-speech');
   const checkAlwaysTop = document.getElementById('check-always-top');
+  const checkRoam = document.getElementById('check-roam');
 
   // ----------------------------------------------------------------
   // 1. Mode Switching Logic
@@ -134,7 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Esc closes settings or collapses to pet mode
     if (e.key === 'Escape') {
       if (!settingsModal.classList.contains('hidden')) {
-        settingsModal.classList.add('hidden');
+        closeSettings();
       } else if (currentMode === 'chat') {
         setMode('pet');
       }
@@ -420,6 +421,13 @@ document.addEventListener('DOMContentLoaded', () => {
     checkPetSound.checked = pet.soundEnabled;
     checkAutoSpeech.checked = pet.autoSpeech;
 
+    // Roaming lives in the main process (tray can change it too).
+    if (window.electronAPI && window.electronAPI.getRoamEnabled) {
+      window.electronAPI.getRoamEnabled().then((enabled) => {
+        checkRoam.checked = enabled !== false;
+      }).catch(() => {});
+    }
+
     // Check matching skin radio
     const skinRadio = document.querySelector(`input[name="petSkin"][value="${pet.skin}"]`);
     if (skinRadio) skinRadio.checked = true;
@@ -427,10 +435,17 @@ document.addEventListener('DOMContentLoaded', () => {
     handleProviderFormVisibility();
     document.querySelector('.modal-body').scrollTop = 0;
     settingsModal.classList.remove('hidden');
+    if (window.electronAPI && window.electronAPI.setUiBusy) {
+      window.electronAPI.setUiBusy(true);
+    }
   }
 
   function closeSettings() {
+    if (settingsModal.classList.contains('hidden')) return;
     settingsModal.classList.add('hidden');
+    if (window.electronAPI && window.electronAPI.setUiBusy) {
+      window.electronAPI.setUiBusy(false);
+    }
   }
 
   btnQuickSettings.addEventListener('click', openSettings);
@@ -671,6 +686,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.electronAPI && window.electronAPI.setAlwaysOnTop) {
       window.electronAPI.setAlwaysOnTop(checkAlwaysTop.checked);
     }
+    if (window.electronAPI && window.electronAPI.setRoamEnabled) {
+      window.electronAPI.setRoamEnabled(checkRoam.checked);
+    }
 
     updateModelBadgeDisplay();
     closeSettings();
@@ -681,6 +699,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Reset Settings
   btnResetSettings.addEventListener('click', () => {
     if (confirm('確定要恢復預設設定嗎？')) {
+      if (window.electronAPI && window.electronAPI.setRoamEnabled) {
+        window.electronAPI.setRoamEnabled(false);
+      }
       localStorage.clear();
       location.reload();
     }

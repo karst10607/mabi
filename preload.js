@@ -16,5 +16,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onPetInteraction: (callback) => {
     ipcRenderer.on('pet-interaction', (_event, type) => callback(type));
-  }
+  },
+  onRoamState: (callback) => {
+    ipcRenderer.on('roam-state', (_event, state) => callback(state));
+  },
+  setUiBusy: (busy) => ipcRenderer.send('set-ui-busy', busy),
+  notifyPetActivity: () => ipcRenderer.send('pet-activity'),
+  getRoamEnabled: () => ipcRenderer.invoke('get-roam-enabled'),
+  setRoamEnabled: (enabled) => ipcRenderer.send('set-roam-enabled', enabled)
 });

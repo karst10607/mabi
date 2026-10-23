@@ -33,6 +33,7 @@ class PetEngine {
     this.blinkInterval = null;
     this.rig2d = null;
     this.rigToken = 0;
+    this.roamClassTimer = null;
 
     this.init();
   }
@@ -41,6 +42,7 @@ class PetEngine {
     this.renderSkin();
     this.updateStatsDisplay();
     this.setupInteractions();
+    this.setupRoam();
     this.startBlinkingLoop();
     this.startAutoSpeechLoop();
 
@@ -423,9 +425,49 @@ class PetEngine {
     if (btnPlay) btnPlay.addEventListener('click', () => this.play());
   }
 
+  setupRoam() {
+    if (!window.electronAPI || !window.electronAPI.onRoamState) return;
+    window.electronAPI.onRoamState((state) => this.setRoamState(state));
+  }
+
+  setRoamState(state) {
+    clearTimeout(this.roamClassTimer);
+    this.roamClassTimer = null;
+    document.body.classList.remove('roam-takeoff', 'roam-air', 'roam-land');
+
+    if (state === 'takeoff') {
+      document.body.classList.add('roam-takeoff');
+      // 'air' normally arrives on its own; this keeps the crouch from sticking
+      // if the hop is cancelled mid-launch.
+      this.roamClassTimer = setTimeout(() => {
+        if (document.body.classList.contains('roam-takeoff')) {
+          document.body.classList.remove('roam-takeoff');
+          document.body.classList.add('roam-air');
+        }
+      }, 220);
+      return;
+    }
+
+    if (state === 'air') {
+      document.body.classList.add('roam-air');
+      return;
+    }
+
+    if (state === 'land') {
+      document.body.classList.add('roam-land');
+      if (this.rig2d) this.rig2d.react('play');
+      this.roamClassTimer = setTimeout(() => {
+        document.body.classList.remove('roam-land');
+      }, 380);
+    }
+  }
+
   // Pat the pet
   pat(clickX, clickY) {
     this.playSound('pat');
+    if (window.electronAPI && window.electronAPI.notifyPetActivity) {
+      window.electronAPI.notifyPetActivity();
+    }
     this.increaseAffection(2);
     this.spawnParticle('❤️', clickX, clickY);
     this.setState('happy', 1200);
@@ -444,6 +486,9 @@ class PetEngine {
   // Feed the pet
   feed() {
     this.playSound('feed');
+    if (window.electronAPI && window.electronAPI.notifyPetActivity) {
+      window.electronAPI.notifyPetActivity();
+    }
     this.increaseEnergy(5);
     this.spawnParticle('🍣');
     this.setState('eating', 1500);
@@ -457,6 +502,9 @@ class PetEngine {
   // Play with pet
   play() {
     this.playSound('pop');
+    if (window.electronAPI && window.electronAPI.notifyPetActivity) {
+      window.electronAPI.notifyPetActivity();
+    }
     this.increaseAffection(3);
     this.decreaseEnergy(2);
     this.spawnParticle('🎾');
