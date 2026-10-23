@@ -142,16 +142,27 @@ export class PetRig2D {
       t.anisotropy = 4;
     }
 
+    const rig = meta.rig;
+    if (!rig) throw new Error('skin meta is missing "rig"');
     const W = meta.texW, H = meta.texH;
     const ox = meta.origin[0], oy = meta.origin[1];
     const neckTY = meta.neck.y - oy;
     const neck = new THREE.Vector2(meta.neck.cx - ox, -neckTY);
     const eyeL = meta.eyes[0], eyeR = meta.eyes[1];
-    const earTips = meta.earTips.map(([x, y]) => new THREE.Vector2(x - ox, y - oy));
-    const earBases = [
-      new THREE.Vector2(earTips[0].x + 22, -(earTips[0].y + 195)),
-      new THREE.Vector2(earTips[1].x - 50, -(earTips[1].y + 195)),
-    ];
+    if (!eyeL || !eyeR) throw new Error('skin meta needs two eye landmarks');
+
+    // rig landmarks are authored in the original matte image; weights live in
+    // texture space, pivots in world space (y up)
+    const texPoint = ([x, y]) => [x - ox, y - oy];
+    const worldPoint = ([x, y]) => new THREE.Vector2(x - ox, -(y - oy));
+    const ears = (rig.ears || []).map((e) => {
+      const [cx, cy] = texPoint(e.center);
+      return { cx, cy, sx: e.sigma[0], sy: e.sigma[1], pivot: worldPoint(e.pivot) };
+    });
+    if (ears.length !== 0 && ears.length !== 2) throw new Error('rig.ears must list 0 or 2 ears');
+    const breath = rig.breath;
+    const [breathCx, breathCy] = texPoint(breath.center);
+    const tail = rig.tail || null;
 
     // grid in texture-pixel space with y flipped into world space (y up)
     const pos = [], uv = [], idx = [];
@@ -164,14 +175,17 @@ export class PetRig2D {
         pos.push(x, -y, 0);
         uv.push(i / COLS, j / ROWS);
 
-        const head = smoothstep(neckTY + 55, neckTY - 95, y);
-        const earL = gauss(x, y, (earTips[0].x + 22 / 2), earTips[0].y + 97.5, 70, 95);
-        const earR = gauss(x, y, (earTips[1].x - 50 / 2), earTips[1].y + 97.5, 70, 95);
-        const tail = smoothstep(310, 165, x) * smoothstep(960, 1090, y);
-        const breath = gauss(x, y, 350, 700, 240, 180) * smoothstep(1040, 900, y);
+        const head = smoothstep(neckTY + rig.head.zeroBelowNeck, neckTY - rig.head.fullAboveNeck, y);
+        const earL = ears.length ? gauss(x, y, ears[0].cx, ears[0].cy, ears[0].sx, ears[0].sy) : 0;
+        const earR = ears.length ? gauss(x, y, ears[1].cx, ears[1].cy, ears[1].sx, ears[1].sy) : 0;
+        const tailW = tail
+          ? smoothstep(tail.x[0] - ox, tail.x[1] - ox, x) * smoothstep(tail.y[0] - oy, tail.y[1] - oy, y)
+          : 0;
+        const breathW = gauss(x, y, breathCx, breathCy, breath.sigma[0], breath.sigma[1])
+          * smoothstep(breath.fade[0] - oy, breath.fade[1] - oy, y);
         wHead.push(head);
-        wBreath.push(breath);
-        wTail.push(tail);
+        wBreath.push(breathW);
+        wTail.push(tailW);
         wEarL.push(earL * head);
         wEarR.push(earR * head);
       }
@@ -209,14 +223,14 @@ export class PetRig2D {
         uHeadSquash: { value: 0 },
         uBreath: { value: 0 },
         uTailSway: { value: 0 },
-        uEarPivotL: { value: earBases[0] },
-        uEarPivotR: { value: earBases[1] },
+        uEarPivotL: { value: ears.length ? ears[0].pivot : neck.clone() },
+        uEarPivotR: { value: ears.length ? ears[1].pivot : neck.clone() },
         uEarAngleL: { value: 0 },
         uEarAngleR: { value: 0 },
         uEyeLUv: { value: new THREE.Vector2((eyeL.cx - ox) / W, (eyeL.cy - oy) / H) },
         uEyeRUv: { value: new THREE.Vector2((eyeR.cx - ox) / W, (eyeR.cy - oy) / H) },
-        uEyeLRad: { value: new THREE.Vector2(eyeL.rx * 2.1 / W, eyeL.ry * 2.1 / H) },
-        uEyeRRad: { value: new THREE.Vector2(eyeR.rx * 2.1 / W, eyeR.ry * 2.1 / H) },
+        uEyeLRad: { value: new THREE.Vector2(eyeL.rx * rig.eyeRadiusScale / W, eyeL.ry * rig.eyeRadiusScale / H) },
+        uEyeRRad: { value: new THREE.Vector2(eyeR.rx * rig.eyeRadiusScale / W, eyeR.ry * rig.eyeRadiusScale / H) },
         uEyeOpen: { value: 1 },
         uGaze: { value: new THREE.Vector2() },
         uAlpha: { value: 1 },

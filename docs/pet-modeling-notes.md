@@ -75,9 +75,11 @@ Live2D 的做法不是把貓切成很多圖層，而是**一張圖 + 可變形�
 | --- | --- |
 | `mab/renderer/models/cat2d/cat_tex.png` | 主貼圖 618×1270 RGBA |
 | `mab/renderer/models/cat2d/cat_tex_closed.png` | 閉眼版貼圖（只改眼睛區域） |
-| `mab/renderer/models/cat2d/cat_meta.json` | 五官／脖子／耳尖／尾巴座標 |
+| `mab/renderer/models/cat2d/cat_rig.json` | 手工 landmark／權重來源，座標是去背原圖像素 |
+| `mab/renderer/models/cat2d/cat_meta.json` | 工具產生：貼圖尺寸、眼睛、脖子、`rig` |
 | `mab/renderer/models/cat2d/cat_meta.js` | 同上，改成 ES module（`file://` 不能用 fetch） |
-| `mab/renderer/rig2d.js` | `PetRig2D`：網格、權重、著色器、眨眼、30 fps 節流 |
+| `mab/renderer/rig2d.js` | `PetRig2D`：網格、權重、著色器、眨眼、30 fps 節流；不含物種常數 |
+| `mab/tools/` | 去背、格線、landmark 疊圖、貼圖烘焙、閉眼貼圖（不進安裝檔） |
 | `rigtest/` | 六格測試台（idle／左右轉頭／閉眼／耳朵後貼／甩尾） |
 
 貼圖取樣：`NoColorSpace`（保持原色）、`LinearMipmapLinearFilter`（縮小顯示不閃爍）、
@@ -90,13 +92,64 @@ Live2D 的做法不是把貓切成很多圖層，而是**一張圖 + 可變形�
 
 | 權重 | 算法 | 用途 |
 | --- | --- | --- |
-| `aHead` | 以脖子為界的 smoothstep | 頭部剛體旋轉／位移 |
-| `aBreath` | 胸口高斯（x=350, y=700, σx=240, σy=180）× 900→1040 淡出 | 胸腔呼吸；前掌、影子不動 |
-| `aTail` | 左下角 smoothstep | 尾巴擺動 |
-| `aEarL/R` | 以耳尖與耳根中點為中心的高斯（σx 70、σy 95） | 耳朵繞耳根旋轉 |
+| `aHead` | 以脖子為界的 smoothstep（上 95 px、下 55 px） | 頭部剛體旋轉／位移 |
+| `aBreath` | 胸口高斯（center 520,836、σ 240×180）× 1176→1036 淡出 | 胸腔呼吸；前掌、影子不動 |
+| `aTail` | `rig.tail` 的 x／y smoothstep（480→335、1096→1226） | 尾巴擺動 |
+| `aEarL/R` | 以 `rig.ears` 的 center／sigma（70×95）取高斯 | 耳朵繞 pivot 旋轉 |
 
-- 耳朵是**繞耳根旋轉**，不是整體平移。早期用平移會把整個額頭一起拉走。
+- 上表數值都在 `cat_rig.json`，`make_tex.py` 原封不動寫進 meta 的 `rig`。
+  `rig2d.js` 只解釋欄位，**沒有任何貓的常數**；換物種不必改程式。
+- `rig` 座標是去背原圖像素；載入時才減 `origin` 換成貼圖空間，pivot 再翻成 y 向上。
+- `ears` 只接受 0 或 2 個；`tail` 可以是 `null`。鳥、龜目前可把兩者設空，
+  共用頭／胸的變形。`bodyPlan` 目前只有 `quadruped` 一種權重模型，
+  翅膀、縮殼、四足步態這類 body-specific 變形還沒做。
+- 外部化後重跑六格測試台，與改前截圖（1169×856）逐像素比對：
+  只有 2 個像素差 1/255，肉眼與構圖完全相同。
+- 耳朵是**繞耳根（pivot）旋轉**，不是整體平移。早期用平移會把整個額頭一起拉走。
 - 頭部變換在耳朵之後執行，所以轉頭時耳朵會跟著頭走。
+
+### 新增物種：art → landmarks → meta
+
+1. 準備正面、平背景、輪廓清楚的原圖（四肢不要被背景同色吃掉）。
+2. 去背：
+
+   ```bash
+   hy3d-venv/Scripts/python.exe mab/tools/matte_base.py art.png work/
+   ```
+
+3. 畫格線讀座標（可只輸出頭部／尾巴的裁切）：
+
+   ```bash
+   hy3d-venv/Scripts/python.exe mab/tools/grid.py work/base_rgba.png \
+     --crop 150,100,820,760 --out work/grid_head.png
+   ```
+
+4. 複製 `cat_rig.json` 成新物種的 rig 檔，填 `head`、`breath`、`ears`、`tail`、
+   `eyeRadiusScale`。非綠眼要把 `eyes: [{cx,cy,rx,ry}, …]` 寫進 rig 檔；
+   脖子不是自動找最窄列時，加 `neck: {row: y}`。
+5. 疊圖檢查，迭代到耳朵、胸口、尾巴區域正確：
+
+   ```bash
+   hy3d-venv/Scripts/python.exe mab/tools/landmarks.py work/base_rgba.png \
+     --rig work/dog_rig.json --out work/dog_landmarks.png
+   ```
+
+6. 烘焙貼圖與 meta：
+
+   ```bash
+   hy3d-venv/Scripts/python.exe mab/tools/make_tex.py work/base_rgba.png \
+     --rig work/dog_rig.json --out mab/renderer/models/dog2d --name dog
+   ```
+
+7. 產生閉眼貼圖（非綠眼會只用橢圓遮罩，需人工檢查）：
+
+   ```bash
+   hy3d-venv/Scripts/python.exe mab/tools/make_closed.py \
+     mab/renderer/models/dog2d --name dog --preview work/dog_closed.png
+   ```
+
+目前 App 只掛 `cat2d`（`pet.js` 的 `mountRig()`）；新目錄產好後還要加一個
+skin 掛載與設定選項，才會出現在 UI。這是下一步，不是工具鏈的事。
 
 ### 眼睛
 
@@ -134,7 +187,8 @@ Live2D 的做法不是把貓切成很多圖層，而是**一張圖 + 可變形�
 - 目前用固定橢圓（`rx*2.6`, `ry*2.6`）蓋掉整顆眼。
 
 ```bash
-hy3d-venv/Scripts/python.exe make_closed.py
+hy3d-venv/Scripts/python.exe mab/tools/make_closed.py \
+  mab/renderer/models/cat2d --name cat
 ```
 
 ### App 整合
@@ -410,10 +464,14 @@ Phase B 才有東西可以測；反過來先接 honoka，會把兩個都還不�
 ## 8. 重現指令
 
 ```bash
-# 產生 2D 素材（需要 hy3d-venv 裡的 opencv / numpy / rembg）
-hy3d-venv/Scripts/python.exe matte_base.py
-hy3d-venv/Scripts/python.exe make_tex.py
-hy3d-venv/Scripts/python.exe make_closed.py
+# 產生 2D 素材（依 mab/tools/requirements.txt：Pillow / numpy / scipy / opencv-python）
+hy3d-venv/Scripts/python.exe mab/tools/matte_base.py \
+  vibe_images/cat-base-front_1792727676420_f9faebe7.png layers/
+hy3d-venv/Scripts/python.exe mab/tools/make_tex.py layers/base_rgba.png \
+  --rig mab/renderer/models/cat2d/cat_rig.json \
+  --out mab/renderer/models/cat2d --name cat
+hy3d-venv/Scripts/python.exe mab/tools/make_closed.py \
+  mab/renderer/models/cat2d --name cat
 
 # 六格測試台（啟動後用 CDP 截圖）
 env -u ELECTRON_RUN_AS_NODE ./mab/node_modules/electron/dist/electron.exe \

@@ -28,6 +28,7 @@
     "files": [
       "**/*",
       "!renderer/models/pet.glb",
+      "!tools/**",
       "!dist/**",
       "!dist-new/**",
       "!**/*.log"

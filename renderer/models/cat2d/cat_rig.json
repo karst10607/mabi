@@ -1,0 +1,65 @@
+{
+  "neck": {
+    "row": 505
+  },
+  "bodyPlan": "quadruped",
+  "head": {
+    "fullAboveNeck": 95,
+    "zeroBelowNeck": 55
+  },
+  "breath": {
+    "center": [
+      520,
+      836
+    ],
+    "sigma": [
+      240,
+      180
+    ],
+    "fade": [
+      1176,
+      1036
+    ]
+  },
+  "ears": [
+    {
+      "center": [
+        331,
+        245.5
+      ],
+      "pivot": [
+        342,
+        343
+      ],
+      "sigma": [
+        70,
+        95
+      ]
+    },
+    {
+      "center": [
+        675,
+        249.5
+      ],
+      "pivot": [
+        650,
+        347
+      ],
+      "sigma": [
+        70,
+        95
+      ]
+    }
+  ],
+  "tail": {
+    "x": [
+      480,
+      335
+    ],
+    "y": [
+      1096,
+      1226
+    ]
+  },
+  "eyeRadiusScale": 2.1
+}
