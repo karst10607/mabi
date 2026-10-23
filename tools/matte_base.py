@@ -18,6 +18,8 @@ def main():
     ap.add_argument("src", help="reference image with a flat background")
     ap.add_argument("out_dir", nargs="?", default=".", help="directory for base_rgba.png (default: .)")
     ap.add_argument("--threshold", type=int, default=18, help="colour distance that counts as foreground")
+    ap.add_argument("--solid-interior", type=int, default=0,
+                    help="erode silhouette by N px and force interior alpha=255 (prevents grey fur/muzzle bleed)")
     args = ap.parse_args()
 
     src = Path(args.src)
@@ -56,6 +58,9 @@ def main():
     # soft alpha from the distance, so the silhouette edge is not stair-stepped
     soft_lo = args.threshold / 3
     alpha = np.clip((d - soft_lo) / (args.threshold - soft_lo), 0, 1) * m
+    if args.solid_interior > 0:
+        interior = ndimage.binary_erosion(m, iterations=args.solid_interior)
+        alpha = np.where(interior, 1.0, alpha)
     out = np.dstack([a, (alpha * 255).round()]).astype(np.uint8)
     out[alpha < 0.02] = 0
     Image.fromarray(out, "RGBA").save(out_dir / "base_rgba.png")

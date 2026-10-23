@@ -191,17 +191,23 @@ hy3d-venv/Scripts/python.exe mab/tools/make_closed.py \
   mab/renderer/models/cat2d --name cat
 ```
 
-### App 整合
+### App 整合與多角色切換／移除
 
-- 新 skin：`cat2d`（設定 → 寵物外觀 → 「真實虎斑貓」）。
+- 2D Live2D 風格角色（`RIG_SKINS`）：
+  - `cat2d`：條碼（棕黑虎斑貓，`renderer/models/cat2d/`）
+  - `ami2d`：阿咪（橘色虎斑貓 + 粉紅鈴鐺項圈，`renderer/models/ami2d/`）
+  - `kk2d`：KK（台灣黑犬／歐告 + 白霜嘴吻 + 淺藍項圈，`renderer/models/kk2d/`）
+- **快速切換與移除角色**：
+  - 直接點擊寵物視窗底部的**名字標籤**（`#pet-name-badge`）即可在未移除的寵物角色間循環切換，並自動同步預設名字與圖示。
+  - 在「設定 → 寵物外觀」中，每個角色卡片右上角都有 `✕` 移除按鈕，可將不想要的角色從切換清單與外觀選單隱藏（儲存於 `localStorage.aurapet_hidden_skins`），底部亦提供「恢復全部角色」按鈕。
 - `index.html` 加了 import map，讓 `rig2d.js` 在 `file://` 下能解析 `import 'three'`。
-- `pet.js` 動態 `import('./rig2d.js')`，`mountRig()` / `disposeRig()` 成對呼叫，
+- `pet.js` 動態 `import('./rig2d.js')`，`mountRig(skinId)` / `disposeRig()` 成對呼叫，
   切換 skin 時會銷毀 WebGL context 與 canvas。
-- 互動：摸摸 → 脈動 + 眨眼；餵食 → 點頭；玩 → 甩尾。
+- 互動：摸摸 → 脈動 + 眨眼（狗狗角色 `kk2d` / `shiba` 會顯示專屬汪汪台詞）；餵食 → 點頭；玩 → 甩尾。
 - 「牠對你的稱呼」存在 `aurapet_user_title`（預設「主人」）。問候、摸摸台詞、
   待機台詞、內建回覆與 API 的 system prompt 都會套用；API 路徑是在送出前把
   prompt 裡的「主人」換成稱呼，再補一句 `請以「<稱呼>」稱呼使用者`。
-- cat2d 會把 `body` 加上 `skin-rig` class，講話泡泡改用小視窗專屬的位置（見 #17）。
+- 所有 2D rig 角色都會把 `body` 加上 `skin-rig` class，講話泡泡改用小視窗專屬的位置（見 #17）。
 
 ### 在螢幕邊緣到處跳（漫遊）
 
@@ -465,6 +471,7 @@ Phase B 才有東西可以測；反過來先接 honoka，會把兩個都還不�
 
 ```bash
 # 產生 2D 素材（依 mab/tools/requirements.txt：Pillow / numpy / scipy / opencv-python）
+# 條碼 (cat2d)
 hy3d-venv/Scripts/python.exe mab/tools/matte_base.py \
   vibe_images/cat-base-front_1792727676420_f9faebe7.png layers/
 hy3d-venv/Scripts/python.exe mab/tools/make_tex.py layers/base_rgba.png \
@@ -472,6 +479,24 @@ hy3d-venv/Scripts/python.exe mab/tools/make_tex.py layers/base_rgba.png \
   --out mab/renderer/models/cat2d --name cat
 hy3d-venv/Scripts/python.exe mab/tools/make_closed.py \
   mab/renderer/models/cat2d --name cat
+
+# 阿咪 (ami2d) — 加上 --solid-interior 3 確保內部灰白毛色 alpha=255
+hy3d-venv/Scripts/python.exe mab/tools/matte_base.py \
+  vibe_images/ami_base_front.jpg work/ami --solid-interior 3
+hy3d-venv/Scripts/python.exe mab/tools/make_tex.py work/ami/base_rgba.png \
+  --rig mab/renderer/models/ami2d/ami_rig.json \
+  --out mab/renderer/models/ami2d --name ami
+hy3d-venv/Scripts/python.exe mab/tools/make_closed.py \
+  mab/renderer/models/ami2d --name ami
+
+# KK (kk2d) — 加上 --solid-interior 3 保護白霜嘴吻與眉毛不被灰底距離公式誤傷為半透明
+hy3d-venv/Scripts/python.exe mab/tools/matte_base.py \
+  vibe_images/kk_base_front.jpg work/kk --threshold 26 --solid-interior 3
+hy3d-venv/Scripts/python.exe mab/tools/make_tex.py work/kk/base_rgba.png \
+  --rig mab/renderer/models/kk2d/kk_rig.json \
+  --out mab/renderer/models/kk2d --name kk
+hy3d-venv/Scripts/python.exe mab/tools/make_closed.py \
+  mab/renderer/models/kk2d --name kk
 
 # 六格測試台（啟動後用 CDP 截圖）
 env -u ELECTRON_RUN_AS_NODE ./mab/node_modules/electron/dist/electron.exe \

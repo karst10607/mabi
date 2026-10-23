@@ -340,7 +340,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const msg = document.createElement('div');
     msg.className = 'message assistant';
 
-    const emojiMap = { kitsune: '🦊', shiba: '🐕', cat: '🐱', slime: '✨' };
+    const emojiMap = { cat2d: '🐈', ami2d: '🧡', kk2d: '🐕‍🦺', kitsune: '🦊', shiba: '🐕', cat: '🐱', slime: '✨' };
     const avatarEmoji = emojiMap[pet.skin] || '🦊';
 
     msg.innerHTML = `
@@ -428,7 +428,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }).catch(() => {});
     }
 
-    // Check matching skin radio
+    // Check matching skin radio & sync hidden cards
+    syncSkinCardsVisibility();
     const skinRadio = document.querySelector(`input[name="petSkin"][value="${pet.skin}"]`);
     if (skinRadio) skinRadio.checked = true;
 
@@ -638,9 +639,54 @@ document.addEventListener('DOMContentLoaded', () => {
 
   updateCustomPhotoUI();
 
+  const hiddenSkinsBar = document.getElementById('hidden-skins-bar');
+  const hiddenSkinsCount = document.getElementById('hidden-skins-count');
+  const btnRestoreSkins = document.getElementById('btn-restore-skins');
+
+  function syncSkinCardsVisibility() {
+    const hidden = pet.getHiddenSkins();
+    const avail = pet.getAvailableSkins();
+    document.querySelectorAll('.skin-card[data-skin]').forEach((card) => {
+      const skinId = card.dataset.skin;
+      const isHidden = hidden.includes(skinId);
+      card.classList.toggle('hidden-skin-card', isHidden);
+      const rmBtn = card.querySelector('.skin-remove-btn');
+      if (rmBtn) {
+        rmBtn.disabled = avail.length <= 1 && avail.includes(skinId);
+      }
+    });
+    if (hiddenSkinsBar && hiddenSkinsCount) {
+      hiddenSkinsBar.classList.toggle('hidden', hidden.length === 0);
+      hiddenSkinsCount.textContent = `已移除 ${hidden.length} 個角色`;
+    }
+    const skinRadio = document.querySelector(`input[name="petSkin"][value="${pet.skin}"]`);
+    if (skinRadio) skinRadio.checked = true;
+    if (inputPetNickname) inputPetNickname.value = pet.nickname;
+  }
+
+  document.querySelectorAll('.skin-remove-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const skinId = btn.dataset.removeSkin;
+      if (!skinId) return;
+      if (pet.removeSkin(skinId)) {
+        syncSkinCardsVisibility();
+      }
+    });
+  });
+
+  if (btnRestoreSkins) {
+    btnRestoreSkins.addEventListener('click', () => {
+      pet.restoreAllSkins();
+      syncSkinCardsVisibility();
+    });
+  }
+
   skinRadios.forEach(radio => {
     radio.addEventListener('change', () => {
-      pet.setSkin(radio.value);
+      pet.setSkin(radio.value, { autoNickname: true });
+      if (inputPetNickname) inputPetNickname.value = pet.nickname;
     });
   });
 

@@ -2,7 +2,53 @@
  * AuraPet - Interactive Pet Animation & Sound Engine
  */
 
-const KNOWN_SKINS = ['kitsune', 'shiba', 'cat', 'cat2d', 'slime', 'custom_photo'];
+const RIG_SKINS = {
+  cat2d: {
+    dir: './models/cat2d',
+    prefix: 'cat',
+    emoji: '🐈',
+    defaultName: '條碼',
+    species: 'cat'
+  },
+  ami2d: {
+    dir: './models/ami2d',
+    prefix: 'ami',
+    emoji: '🧡',
+    defaultName: '阿咪',
+    species: 'cat'
+  },
+  kk2d: {
+    dir: './models/kk2d',
+    prefix: 'kk',
+    emoji: '🐕‍🦺',
+    defaultName: 'KK',
+    species: 'dog'
+  }
+};
+
+const SKIN_DEFAULT_NAMES = {
+  cat2d: '條碼',
+  ami2d: '阿咪',
+  kk2d: 'KK',
+  kitsune: 'Lumi',
+  shiba: 'Koma',
+  cat: 'Luna',
+  slime: 'Mochi',
+  custom_photo: '毛孩'
+};
+
+const SKIN_EMOJIS = {
+  cat2d: '🐈',
+  ami2d: '🧡',
+  kk2d: '🐕‍🦺',
+  kitsune: '🦊',
+  shiba: '🐕',
+  cat: '🐱',
+  slime: '✨',
+  custom_photo: '📸'
+};
+
+const KNOWN_SKINS = ['cat2d', 'ami2d', 'kk2d', 'kitsune', 'shiba', 'cat', 'slime', 'custom_photo'];
 
 class PetEngine {
   constructor() {
@@ -18,8 +64,9 @@ class PetEngine {
     // Pet State
     // Saved value can outlive a removed skin (e.g. model3d), which would render an empty pet.
     const savedSkin = localStorage.getItem('aurapet_skin');
-    this.skin = KNOWN_SKINS.includes(savedSkin) ? savedSkin : 'kitsune';
-    this.nickname = localStorage.getItem('aurapet_name') || 'Lumi';
+    const availSkins = this.getAvailableSkins();
+    this.skin = availSkins.includes(savedSkin) ? savedSkin : (availSkins[0] || 'cat2d');
+    this.nickname = localStorage.getItem('aurapet_name') || SKIN_DEFAULT_NAMES[this.skin] || 'Lumi';
     this.userTitle = localStorage.getItem('aurapet_user_title') || '主人';
     this.soundEnabled = localStorage.getItem('aurapet_sound') !== 'false';
     this.autoSpeech = localStorage.getItem('aurapet_speech') !== 'false';
@@ -125,11 +172,11 @@ class PetEngine {
 
     if (this.petNameBadge) {
       this.petNameBadge.textContent = `${this.nickname} ✦`;
+      this.petNameBadge.title = '點擊快速切換下一隻寵物';
     }
 
     if (this.miniPetIcon) {
-      const emojiMap = { kitsune: '🦊', shiba: '🐕', cat: '🐱', cat2d: '🐈', slime: '✨' };
-      this.miniPetIcon.textContent = emojiMap[this.skin] || '🦊';
+      this.miniPetIcon.textContent = SKIN_EMOJIS[this.skin] || '🦊';
     }
 
     let svgHtml = '';
@@ -338,7 +385,7 @@ class PetEngine {
           <path id="pet-mouth" d="M56 68 Q 60 74 64 68" stroke="#0f172a" stroke-width="2" stroke-linecap="round" fill="none"/>
         </svg>
       `;
-    } else if (this.skin === 'cat2d') {
+    } else if (this.isRigSkin()) {
       svgHtml = `<div class="rig2d-host" id="rig2d-host"></div>`;
     } else if (this.skin === 'custom_photo') {
       // Real Pet Photo Modeling
@@ -371,22 +418,87 @@ class PetEngine {
       }
     }
 
+    const isRig = this.isRigSkin();
     this.container.innerHTML = svgHtml;
-    this.container.classList.toggle('rig-mode', this.skin === 'cat2d');
-    document.body.classList.toggle('skin-rig', this.skin === 'cat2d');
-    if (this.skin === 'cat2d') this.mountRig();
+    this.container.classList.toggle('rig-mode', isRig);
+    document.body.classList.toggle('skin-rig', isRig);
+    if (isRig) this.mountRig(this.skin);
   }
 
-  async mountRig() {
+  isRigSkin(skin = this.skin) {
+    return Boolean(RIG_SKINS[skin]);
+  }
+
+  getHiddenSkins() {
+    try {
+      const raw = JSON.parse(localStorage.getItem('aurapet_hidden_skins') || '[]');
+      return Array.isArray(raw) ? raw.filter((s) => KNOWN_SKINS.includes(s)) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  setHiddenSkins(list) {
+    const clean = Array.from(new Set(list)).filter((s) => KNOWN_SKINS.includes(s));
+    localStorage.setItem('aurapet_hidden_skins', JSON.stringify(clean));
+  }
+
+  getAvailableSkins() {
+    const hidden = this.getHiddenSkins();
+    const avail = KNOWN_SKINS.filter((s) => !hidden.includes(s));
+    return avail.length > 0 ? avail : ['cat2d'];
+  }
+
+  removeSkin(skinId) {
+    const avail = this.getAvailableSkins();
+    if (avail.length <= 1 && avail.includes(skinId)) {
+      return false;
+    }
+    const hidden = this.getHiddenSkins();
+    if (!hidden.includes(skinId)) {
+      hidden.push(skinId);
+      this.setHiddenSkins(hidden);
+    }
+    if (this.skin === skinId) {
+      const nextAvail = this.getAvailableSkins();
+      this.setSkin(nextAvail[0], { autoNickname: true });
+    }
+    return true;
+  }
+
+  restoreAllSkins() {
+    localStorage.removeItem('aurapet_hidden_skins');
+  }
+
+  cycleNextSkin() {
+    const avail = this.getAvailableSkins().filter((s) =>
+      s !== 'custom_photo' || Boolean(localStorage.getItem('aurapet_custom_photo'))
+    );
+    if (avail.length <= 1) return this.skin;
+    const idx = avail.indexOf(this.skin);
+    const next = avail[(idx + 1) % avail.length];
+    this.setSkin(next, { autoNickname: true });
+    this.playSound('pop');
+    this.say(`換我陪${this.userTitle}囉！我是 ${this.nickname} ✨`, 2600);
+    return next;
+  }
+
+  async mountRig(skinId = this.skin) {
+    const cfg = RIG_SKINS[skinId];
+    if (!cfg) return;
     const token = this.rigToken;
     const host = document.getElementById('rig2d-host');
     if (!host) return;
     try {
       const { PetRig2D } = await import('./rig2d.js');
-      const meta = (await import('./models/cat2d/cat_meta.js')).default;
+      const meta = (await import(`${cfg.dir}/${cfg.prefix}_meta.js`)).default;
       if (token !== this.rigToken) return;
       const rig = new PetRig2D(host);
-      await rig.load('./models/cat2d/cat_tex.png', meta, './models/cat2d/cat_tex_closed.png');
+      await rig.load(
+        `${cfg.dir}/${cfg.prefix}_tex.png`,
+        meta,
+        `${cfg.dir}/${cfg.prefix}_tex_closed.png`
+      );
       if (token !== this.rigToken) { rig.dispose(); return; }
       rig.setViewport(host.clientWidth, host.clientHeight);
       this.rig2d = rig;
@@ -411,6 +523,14 @@ class PetEngine {
     if (avatarWrapper) {
       avatarWrapper.addEventListener('click', (e) => {
         this.pat(e.clientX, e.clientY);
+      });
+    }
+
+    // Quick switch pet on badge click
+    if (this.petNameBadge) {
+      this.petNameBadge.style.cursor = 'pointer';
+      this.petNameBadge.addEventListener('click', () => {
+        this.cycleNextSkin();
       });
     }
 
@@ -473,7 +593,14 @@ class PetEngine {
     this.setState('happy', 1200);
     if (this.rig2d) this.rig2d.react('happy');
 
-    const patLines = [
+    const isDog = this.skin === 'kk2d' || this.skin === 'shiba';
+    const patLines = isDog ? [
+      '好舒服～ 尾巴搖個不停 🐾',
+      `最喜歡${this.userTitle}摸摸我啦！❤️`,
+      '親密度上升中～ 舔舔你的手！',
+      `今天也很努力呢，${this.userTitle}最棒了！`,
+      '汪嗚～ 元氣充滿！'
+    ] : [
       '好舒服～ 呼嚕呼嚕 (*/ω＼*)',
       `最喜歡${this.userTitle}摸摸我啦！❤️`,
       '親密度上升中～ 蹭蹭你的手！',
@@ -656,9 +783,15 @@ class PetEngine {
     }, 45000); // Trigger every 45s
   }
 
-  setSkin(newSkin) {
+  setSkin(newSkin, opts = {}) {
+    const oldDefault = SKIN_DEFAULT_NAMES[this.skin];
     this.skin = newSkin;
     localStorage.setItem('aurapet_skin', newSkin);
+    const defaultNames = Object.values(SKIN_DEFAULT_NAMES);
+    if (opts.autoNickname || !this.nickname || defaultNames.includes(this.nickname) || this.nickname === oldDefault) {
+      const nextName = SKIN_DEFAULT_NAMES[newSkin];
+      if (nextName) this.setNickname(nextName);
+    }
     this.renderSkin();
   }
 

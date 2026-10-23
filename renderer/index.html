@@ -261,50 +261,89 @@
         <!-- Tab 2: Pet Appearance & Personality -->
         <div id="tab-pet" class="tab-content">
           <div class="form-group">
-            <label>選擇寵物夥伴形象</label>
-            <div class="pet-skin-selector">
-              <label class="skin-card">
+            <label>選擇寵物形象（點右上 ✕ 可移除，點桌寵左上名字可切換）</label>
+            <div id="hidden-skins-bar" class="hidden-skins-bar hidden">
+              <span id="hidden-skins-count">已移除 0 個角色</span>
+              <button type="button" id="btn-restore-skins" class="btn-restore-skins">恢復全部角色</button>
+            </div>
+            <div class="pet-skin-selector" id="pet-skin-selector">
+              <label class="skin-card" data-skin="cat2d">
+                <input type="radio" name="petSkin" value="cat2d">
+                <div class="skin-box">
+                  <button type="button" class="skin-remove-btn" data-remove-skin="cat2d" title="移除此角色">✕</button>
+                  <div class="skin-emoji">🐈</div>
+                  <div class="skin-name">條碼 (虎斑貓)</div>
+                  <div class="skin-desc">Live2D 動態・紅項圈金鈴</div>
+                </div>
+              </label>
+
+              <label class="skin-card" data-skin="ami2d">
+                <input type="radio" name="petSkin" value="ami2d">
+                <div class="skin-box">
+                  <button type="button" class="skin-remove-btn" data-remove-skin="ami2d" title="移除此角色">✕</button>
+                  <div class="skin-emoji">🧡</div>
+                  <div class="skin-name">阿咪 (橘虎斑貓)</div>
+                  <div class="skin-desc">Live2D 動態・粉紅鈴鐺</div>
+                </div>
+              </label>
+
+              <label class="skin-card" data-skin="kk2d">
+                <input type="radio" name="petSkin" value="kk2d">
+                <div class="skin-box">
+                  <button type="button" class="skin-remove-btn" data-remove-skin="kk2d" title="移除此角色">✕</button>
+                  <div class="skin-emoji">🐕‍🦺</div>
+                  <div class="skin-name">KK (台灣黑犬)</div>
+                  <div class="skin-desc">Live2D 動態・白嘴套藍項圈</div>
+                </div>
+              </label>
+
+              <label class="skin-card" data-skin="kitsune">
                 <input type="radio" name="petSkin" value="kitsune" checked>
                 <div class="skin-box">
+                  <button type="button" class="skin-remove-btn" data-remove-skin="kitsune" title="移除此角色">✕</button>
                   <div class="skin-emoji">🦊</div>
                   <div class="skin-name">Lumi 賽博靈狐</div>
                   <div class="skin-desc">靈動機靈・科技霓虹</div>
                 </div>
               </label>
 
-              <label class="skin-card">
+              <label class="skin-card" data-skin="shiba">
                 <input type="radio" name="petSkin" value="shiba">
                 <div class="skin-box">
+                  <button type="button" class="skin-remove-btn" data-remove-skin="shiba" title="移除此角色">✕</button>
                   <div class="skin-emoji">🐕</div>
                   <div class="skin-name">Koma 柴犬寶貝</div>
                   <div class="skin-desc">治癒溫暖・元氣滿滿</div>
                 </div>
               </label>
 
-              <label class="skin-card">
+              <label class="skin-card" data-skin="cat">
                 <input type="radio" name="petSkin" value="cat">
                 <div class="skin-box">
+                  <button type="button" class="skin-remove-btn" data-remove-skin="cat" title="移除此角色">✕</button>
                   <div class="skin-emoji">🐱</div>
                   <div class="skin-name">Luna 霓虹喵喵</div>
                   <div class="skin-desc">優雅傲嬌・陪伴傾聽</div>
                 </div>
               </label>
 
-              <label class="skin-card">
-                <input type="radio" name="petSkin" value="cat2d">
+              <label class="skin-card" data-skin="slime">
+                <input type="radio" name="petSkin" value="slime">
                 <div class="skin-box">
-                  <div class="skin-emoji">🐈</div>
-                  <div class="skin-name">真實虎斑貓</div>
-                  <div class="skin-desc">Live2D 動態・貼近本尊</div>
+                  <button type="button" class="skin-remove-btn" data-remove-skin="slime" title="移除此角色">✕</button>
+                  <div class="skin-emoji">✨</div>
+                  <div class="skin-name">Mochi 宇宙史萊姆</div>
+                  <div class="skin-desc">Q彈軟萌・星光閃耀</div>
                 </div>
               </label>
 
-              <label class="skin-card">
+              <label class="skin-card" data-skin="custom_photo">
                 <input type="radio" name="petSkin" value="custom_photo">
                 <div class="skin-box skin-box-custom">
+                  <button type="button" class="skin-remove-btn" data-remove-skin="custom_photo" title="移除此角色">✕</button>
                   <div class="skin-emoji" id="custom-skin-preview-emoji">📸</div>
-                  <div class="skin-name">真實寵物建模</div>
-                  <div class="skin-desc">上傳自家毛小孩照片</div>
+                  <div class="skin-name">自訂照片相框</div>
+                  <div class="skin-desc">上傳單張毛小孩照片</div>
                 </div>
               </label>
             </div>
