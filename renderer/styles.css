@@ -1189,6 +1189,45 @@ label {
   100% { transform: scale(1) translateY(0); }
 }
 
+/* 3D Model Skin (three.js WebGL canvas) */
+.model3d-stage {
+  width: 140px;
+  height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.model3d-stage canvas {
+  display: block;
+  width: 140px;
+  height: 140px;
+}
+
+.model3d-missing {
+  width: 140px;
+  height: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-main);
+  background: rgba(15, 18, 28, 0.72);
+  border: 1px dashed rgba(255, 255, 255, 0.28);
+  border-radius: 14px;
+}
+
+.model3d-missing code {
+  font-size: 10px;
+  opacity: 0.75;
+  word-break: break-all;
+}
+
 @keyframes auraPulse {
   0% { box-shadow: 0 0 18px rgba(99, 102, 241, 0.35), 0 0 30px rgba(236, 72, 153, 0.2); }
   100% { box-shadow: 0 0 28px rgba(99, 102, 241, 0.6), 0 0 50px rgba(236, 72, 153, 0.4); }

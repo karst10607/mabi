@@ -26,6 +26,7 @@ class PetEngine {
     this.audioCtx = null;
     this.speechTimer = null;
     this.blinkInterval = null;
+    this.model3d = null;
 
     this.init();
   }
@@ -292,8 +293,13 @@ class PetEngine {
           <circle cx="60" cy="74" r="4.5" fill="#fbbf24" filter="drop-shadow(0 0 3px #fde047)"/>
         </svg>
       `;
-    } else {
-      // Mochi - Cosmic Slime
+    } else if (this.skin === 'model3d') {
+      // Real 3D model rendered with three.js into a transparent WebGL canvas
+      this.container.innerHTML = '<div class="model3d-stage" id="model3d-stage"></div>';
+      this.mountModel3D(document.getElementById('model3d-stage'));
+      return;
+    } else if (this.skin !== 'custom_photo') {
+      // Mochi - Cosmic Slime (also the fallback for unknown skins)
       svgHtml = `
         <svg class="pet-svg" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
@@ -328,7 +334,7 @@ class PetEngine {
           <path id="pet-mouth" d="M56 68 Q 60 74 64 68" stroke="#0f172a" stroke-width="2" stroke-linecap="round" fill="none"/>
         </svg>
       `;
-    } else if (this.skin === 'custom_photo') {
+    } else {
       // Real Pet Photo Modeling
       const customPhoto = localStorage.getItem('aurapet_custom_photo');
       const frameStyle = localStorage.getItem('aurapet_custom_frame') || 'aura-contour';
@@ -360,6 +366,22 @@ class PetEngine {
     }
 
     this.container.innerHTML = svgHtml;
+  }
+
+  async mountModel3D(stage) {
+    if (this.model3d) {
+      this.model3d.dispose();
+      this.model3d = null;
+    }
+    const url = localStorage.getItem('aurapet_model_url') || './models/pet.glb';
+    const engine = new window.PetModel3D(stage);
+    try {
+      await engine.load(url);
+      this.model3d = engine;
+    } catch (err) {
+      engine.dispose();
+      stage.innerHTML = `<div class="model3d-missing">尚未找到 3D 模型<br><code>${url}</code></div>`;
+    }
   }
 
   // Interactivity
@@ -472,6 +494,9 @@ class PetEngine {
   // State Management & Eyes
   setState(newState, duration = 1000) {
     this.state = newState;
+    if (this.model3d && (newState === 'happy' || newState === 'eating')) {
+      this.model3d.react(newState);
+    }
     const eyes = document.querySelectorAll('#pet-eyes .eye');
     const mouth = document.getElementById('pet-mouth');
 

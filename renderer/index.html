@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AuraPet - AI 桌面寵物</title>
   <link rel="stylesheet" href="styles.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "../node_modules/three/build/three.module.js",
+        "three/addons/": "../node_modules/three/examples/jsm/"
+      }
+    }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -296,6 +304,15 @@
                   <div class="skin-desc">上傳自家毛小孩照片</div>
                 </div>
               </label>
+
+              <label class="skin-card">
+                <input type="radio" name="petSkin" value="model3d">
+                <div class="skin-box skin-box-custom">
+                  <div class="skin-emoji">🧊</div>
+                  <div class="skin-name">3D 模型寵物</div>
+                  <div class="skin-desc">載入 GLB 立體建模</div>
+                </div>
+              </label>
             </div>
           </div>
 
@@ -401,6 +418,7 @@
 
   <!-- Audio elements generated via Web Audio API synthesis for zero external dependency -->
   
+  <script type="module" src="model3d.js"></script>
   <script src="pet.js"></script>
   <script src="ai-service.js"></script>
   <script src="app.js"></script>

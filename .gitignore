@@ -3,3 +3,8 @@ dist/
 .DS_Store
 *.log
 .env
+
+# The 3D skin loads renderer/models/pet.glb at runtime, but the model is rebuilt
+# from the owner's own pet photos, so it is not tracked. Track one deliberately
+# with: git add -f renderer/models/pet.glb
+renderer/models/
