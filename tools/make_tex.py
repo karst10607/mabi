@@ -88,7 +88,10 @@ def main():
     neck_xs = np.nonzero(sil[neck_y])[0]
     if not len(neck_xs):
         raise SystemExit("empty silhouette at neck row %d" % neck_y)
-    neck_cx = float((neck_xs[0] + neck_xs[-1]) / 2)
+    if neck_cfg.get("cx") is not None:
+        neck_cx = float(neck_cfg["cx"])
+    else:
+        neck_cx = float((neck_xs[0] + neck_xs[-1]) / 2)
     print("neck y=", neck_y, "width", int(neck_xs[-1] - neck_xs[0]), "cx", neck_cx)
 
     ys, xs = np.nonzero(sil)
@@ -113,6 +116,7 @@ def main():
             "head": rig["head"],
             "breath": rig["breath"],
             "ears": rig.get("ears", []),
+            "paws": rig.get("paws", []),
             "tail": rig.get("tail"),
             "eyeRadiusScale": rig["eyeRadiusScale"],
         },
