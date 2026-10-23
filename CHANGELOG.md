@@ -2,6 +2,22 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.1.1] - 2026-10-23
+
+### Fixed
+
+- macOS 選單列圖示改為 PNG template image（`assets/trayTemplate.png`／`@2x`）：原本把 SVG 交給 `nativeImage.createFromBuffer` 會得到 0×0 空圖，托盤在 macOS 上是不可見的。Windows/Linux 改用 `assets/tray.png`。
+- 補上 `engines.node >= 22.12.0`、`.nvmrc`（24）與 README 建置說明。electron-builder 26 在 Node 20.18 會因 `@noble/hashes` 的 ESM `require` 失敗。
+
+### Changed
+
+- GitHub Actions 改為 Node 24；macOS 以原生 runner 建置 x64（`macos-15-intel`）與 arm64（`macos-15`），並在 `v*` tag 時由單一 release job 上傳 `.dmg`／`.zip`／`.exe`。
+- CI 明確設定 `CSC_IDENTITY_AUTO_DISCOVERY=false`，沒有 Developer ID 也能完成未簽名 macOS 打包。
+
+### Added
+
+- `assets/` 托盤圖示，以及 GitHub Actions 的 macOS x64/arm64 Artifacts。
+
 ## [1.1.0] - 2026-10-23
 
 ### Added

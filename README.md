@@ -67,9 +67,11 @@
 ## 🚀 快速啟動與開發指南
 
 ### 1. 安裝依賴
+需要 **Node.js 22.12+**（建議 24，版本見 `.nvmrc`；electron-builder 26 在 Node 20.18 會編譯失敗）：
 ```bash
-cd desktop-pet
-npm install
+cd mabi
+nvm use            # 或自行切換到 Node 24
+npm ci
 ```
 
 ### 2. 本機啟動
@@ -80,10 +82,12 @@ npm start
 ### 3. 打包發布 (Win / Mac / Linux)
 專案預先配置好 `electron-builder`：
 
-- **打包為 macOS 應用程式 (.dmg / .zip)**：
+- **打包為 macOS 應用程式 (.dmg / .zip)**（需在 macOS 上執行）：
   ```bash
-  npm run dist -- --mac
+  npm run dist -- --mac --x64     # Intel Mac
+  npm run dist -- --mac --arm64   # Apple Silicon
   ```
+  不帶 `--x64`/`--arm64` 時，electron-builder 只會建置目前主機的架構。
 - **打包為 Windows 執行檔 (.exe / 免安裝版)**：
   ```bash
   npm run dist -- --win
@@ -93,21 +97,37 @@ npm start
   npm run dist -- --linux
   ```
 
+> 目前沒有 Apple Developer ID，macOS 產物是**未簽名、未公證**的。本機開啟可右鍵「打開」；若從網路下載，Gatekeeper 會提示無法驗證開發者。
+
+### 4. GitHub Actions 遠端建置
+`.github/workflows/release.yml` 支援：
+
+- 在 Actions 頁面手動 `Run workflow`：建置 Windows 與 macOS x64 / arm64，產物放在 Actions Artifacts。
+- 推送 `v*` tag：除了建置，還會把 `.exe` / `.dmg` / `.zip` 上傳到 GitHub Release。
+
+macOS 建置會明確關閉簽名（`CSC_IDENTITY_AUTO_DISCOVERY=false`），所以不需要 Developer ID 也能完成打包。
+
 ---
 
 ## 📂 專案檔案結構
 
 ```text
-desktop-pet/
+mabi/
 ├── package.json          # 專案配置、依賴與跨平台打包參數
+├── .nvmrc                # 建置用 Node 版本
 ├── main.js               # Electron 主進程 (透明無邊框視窗、托盤選單、全域快捷鍵、IPC 通信)
 ├── preload.js            # 安全的 ContextBridge API 注入
+├── assets/               # 托盤圖示 (macOS template PNG + Win/Linux 彩色 PNG)
+├── build/icon.png        # 應用程式圖示 (electron-builder 會轉成 .icns/.ico)
+├── .github/workflows/    # GitHub Actions 遠端建置與 Release
 └── renderer/             # 前端視圖與邏輯
     ├── index.html        # 雙形態 HTML 架構 (寵物介面 + ChatGPT 對話窗 + 設定對話框)
     ├── styles.css        # 現代深色毛玻璃設計系統、流暢粒子動畫與 Sprite 樣式
     ├── pet.js            # 寵物動畫引擎、SVG 皮膚渲染、Web Audio 音效合成、親密度系統
+    ├── rig2d.js          # three.js 2D 網格變形 rig
     ├── ai-service.js     # 多模型 AI 調用與串流處理器 (OpenAI/Gemini/Claude/Ollama/內建)
-    └── app.js            # 主介面狀態協調、即時 Markdown 渲染、快捷鍵與設定同步
+    ├── app.js            # 主介面狀態協調、即時 Markdown 渲染、快捷鍵與設定同步
+    └── models/           # cat2d / ami2d / kk2d 貼圖、meta 與 rig 權重
 ```
 
 ---

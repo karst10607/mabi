@@ -511,18 +511,42 @@ function showOrRestoreWindow() {
   }
 }
 
+function createTrayImage() {
+  const asset = (name) => path.join(__dirname, 'assets', name);
+  if (process.platform === 'darwin') {
+    const image = nativeImage.createEmpty();
+    image.addRepresentation({
+      scaleFactor: 1,
+      width: 18,
+      height: 18,
+      buffer: fs.readFileSync(asset('trayTemplate.png'))
+    });
+    image.addRepresentation({
+      scaleFactor: 2,
+      width: 36,
+      height: 36,
+      buffer: fs.readFileSync(asset('trayTemplate@2x.png'))
+    });
+    image.setTemplateImage(true);
+    return image;
+  }
+  return nativeImage
+    .createFromBuffer(fs.readFileSync(asset('tray.png')))
+    .resize({ width: 18, height: 18 });
+}
+
 function createTray() {
-  // Simple generated 16x16 icon for tray
-  const iconSvg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-      <circle cx="16" cy="16" r="14" fill="#6366f1"/>
-      <circle cx="11" cy="13" r="2.5" fill="#ffffff"/>
-      <circle cx="21" cy="13" r="2.5" fill="#ffffff"/>
-      <path d="M 12 20 Q 16 24 20 20" stroke="#ffffff" stroke-width="2" fill="none" stroke-linecap="round"/>
-    </svg>
-  `;
-  const iconBuffer = Buffer.from(iconSvg);
-  const icon = nativeImage.createFromBuffer(iconBuffer).resize({ width: 18, height: 18 });
+  let icon;
+  try {
+    icon = createTrayImage();
+  } catch (err) {
+    console.warn('Tray icon asset load failed:', err.message);
+    return;
+  }
+  if (icon.isEmpty()) {
+    console.warn('Tray icon is empty; skipping tray creation');
+    return;
+  }
 
   try {
     tray = new Tray(icon);

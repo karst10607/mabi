@@ -10,8 +10,21 @@ permissions:
   contents: write
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build-macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x64
+          - runner: macos-15
+            arch: arm64
+    env:
+      # No Developer ID yet: package unsigned instead of failing auto-discovery.
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -19,27 +32,88 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Windows Portable & NSIS Installer
-        run: npx electron-builder --win portable nsis --publish never
+      - name: Build macOS (${{ matrix.arch }})
+        run: npx electron-builder --mac --${{ matrix.arch }} --publish never
 
-      - name: Upload Build Artifacts
+      - name: Verify disk image
+        run: hdiutil verify dist/*.dmg
+
+      - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: AuraPet-Windows-Build
+          name: AuraPet-macOS-${{ matrix.arch }}
           path: |
-            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.blockmap
           if-no-files-found: error
 
-      - name: Publish GitHub Release (on tag push)
-        if: startsWith(github.ref, 'refs/tags/v')
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows portable & NSIS installer
+        run: npx electron-builder --win portable nsis --publish never
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: AuraPet-Windows
+          path: dist/*.exe
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: List release files
+        run: ls -lh release
+
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          generate_release_notes: false
+          body: |
+            ## AuraPet ${{ github.ref_name }}
+
+            詳見 [CHANGELOG](https://github.com/karst10607/mabi/blob/main/CHANGELOG.md)。
+
+            ### macOS 未簽名說明
+            此版本沒有 Apple Developer ID，macOS 產物未簽名、未公證。下載後若被 Gatekeeper 阻擋，
+            請在 Finder 對 App 按右鍵選擇「打開」，或執行：
+
+            ```bash
+            xattr -dr com.apple.quarantine /Applications/AuraPet.app
+            ```
+
+            Intel Mac 請下載檔名含 `-x64` 的 `.dmg`／`.zip`；Apple Silicon 請下載檔名含 `-arm64` 的版本。
           files: |
-            dist/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.exe
