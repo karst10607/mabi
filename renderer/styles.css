@@ -161,8 +161,30 @@ html, body {
   border-radius: 14px;
   box-shadow: var(--shadow-bubble);
   z-index: 20;
+  pointer-events: none;
   animation: popInBubble 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   transition: opacity 0.3s ease;
+}
+
+/* The photo cat fills the window, so a bubble near the head would cover its
+   face. Anchor it above the status bar and point the tail up. */
+body.skin-rig .speech-bubble {
+  top: auto;
+  bottom: 62px;
+  max-width: 218px;
+  padding: 7px 10px;
+}
+
+body.skin-rig .speech-content {
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+body.skin-rig .speech-tail {
+  top: -6px;
+  bottom: auto;
+  border-top: none;
+  border-bottom: 6px solid rgba(15, 18, 28, 0.9);
 }
 
 .speech-bubble.hidden {
@@ -238,7 +260,8 @@ html, body {
 .pet-graphic.rig-mode {
   width: 150px;
   height: 198px;
-  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.3));
+  /* a blurred drop shadow reads as a second, larger cat behind this photo skin */
+  filter: none;
 }
 
 .rig2d-host {

@@ -51,6 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const inputModelName = document.getElementById('input-model-name');
   const inputSystemPrompt = document.getElementById('input-system-prompt');
   const inputPetNickname = document.getElementById('input-pet-nickname');
+  const inputUserTitle = document.getElementById('input-user-title');
   const sliderPetScale = document.getElementById('slider-pet-scale');
   const sliderOpacity = document.getElementById('slider-opacity');
   const valOpacity = document.getElementById('val-opacity');
@@ -414,6 +415,7 @@ document.addEventListener('DOMContentLoaded', () => {
     inputModelName.value = ai.modelName;
     inputSystemPrompt.value = ai.systemPrompt;
     inputPetNickname.value = pet.nickname;
+    inputUserTitle.value = pet.userTitle;
 
     checkPetSound.checked = pet.soundEnabled;
     checkAutoSpeech.checked = pet.autoSpeech;
@@ -632,6 +634,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const checkedSkin = document.querySelector('input[name="petSkin"]:checked');
     const selectedSkin = checkedSkin ? checkedSkin.value : pet.skin;
     const petName = inputPetNickname.value.trim() || 'Lumi';
+    const userTitle = inputUserTitle.value.trim() || '主人';
 
     // 1. Save Real Pet Customization
     localStorage.setItem('aurapet_custom_frame', selectPhotoFrame.value);
@@ -643,7 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (selectedSkin === 'custom_photo') {
       const species = inputPetSpecies.value.trim() || '寵物毛小孩';
       const habits = inputRealPetHabits.value.trim();
-      customSystemPrompt = `你是主人最心愛的真實寵物【${petName}】（品種：${species}）。性格與生活習慣：${habits || '撒嬌、親人、可愛'}。請用${petName}的身份、第一人稱、充滿愛意與可愛寵物語氣陪伴主人說話、解答問題！`;
+      customSystemPrompt = `你是${userTitle}最心愛的真實寵物【${petName}】（品種：${species}）。性格與生活習慣：${habits || '撒嬌、親人、可愛'}。請用${petName}的身份、第一人稱、充滿愛意與可愛寵物語氣陪伴${userTitle}說話、解答問題！`;
     }
 
     // 3. Save AI Config
@@ -658,6 +661,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 4. Save Pet Config
     pet.setSkin(selectedSkin);
     pet.setNickname(petName);
+    pet.setUserTitle(userTitle);
     pet.soundEnabled = checkPetSound.checked;
     pet.autoSpeech = checkAutoSpeech.checked;
     localStorage.setItem('aurapet_sound', pet.soundEnabled.toString());

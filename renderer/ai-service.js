@@ -31,6 +31,16 @@ class AIService {
     localStorage.setItem('aurapet_system_prompt', this.systemPrompt);
   }
 
+  get userTitle() {
+    return localStorage.getItem('aurapet_user_title') || '主人';
+  }
+
+  buildSystemPrompt() {
+    const title = this.userTitle;
+    const base = (this.systemPrompt || '').replaceAll('主人', title);
+    return `${base}\n\n請以「${title}」稱呼使用者。`;
+  }
+
   abortCurrent() {
     if (this.currentAbortController) {
       this.currentAbortController.abort();
@@ -72,17 +82,18 @@ class AIService {
   // ================= 1. BUILT-IN SMART OFFLINE AI =================
   async streamBuiltinResponse(messages, onChunk, onDone, signal) {
     const lastUserMsg = messages[messages.length - 1].content.trim();
+    const title = this.userTitle;
     let reply = '';
 
     // Smart contextual pattern matching & personality responses
     if (/代碼|code|bug|錯誤|函數|寫一個/i.test(lastUserMsg)) {
-      reply = `身為你的專屬技術小夥伴，我來為你分析代碼！💻✨\n\n要寫出健壯且高效的代碼，通常建議遵循以下原則：\n\n1. **單一職責原則 (SRP)**：每個函式只做一件明確的事。\n2. **明確的錯誤處理**：使用 try-catch 或合適的 Result 模式包裹異步調用。\n3. **類型安全**：盡可能標註型別，提升可讀性與維護性。\n\n\`\`\`javascript\n// 範例：簡潔優雅的異步資料獲取函數\nasync function fetchCompanionData(endpoint) {\n  try {\n    const response = await fetch(endpoint);\n    if (!response.ok) throw new Error(\`HTTP error! status: \${response.status}\`);\n    return await response.json();\n  } catch (error) {\n    console.error('資料獲取失敗:', error);\n    return null;\n  }\n}\n\`\`\`\n\n主人如果想讓我幫忙檢查具體代碼，隨時把代碼貼給我看哦！🐾`;
+      reply = `身為你的專屬技術小夥伴，我來為你分析代碼！💻✨\n\n要寫出健壯且高效的代碼，通常建議遵循以下原則：\n\n1. **單一職責原則 (SRP)**：每個函式只做一件明確的事。\n2. **明確的錯誤處理**：使用 try-catch 或合適的 Result 模式包裹異步調用。\n3. **類型安全**：盡可能標註型別，提升可讀性與維護性。\n\n\`\`\`javascript\n// 範例：簡潔優雅的異步資料獲取函數\nasync function fetchCompanionData(endpoint) {\n  try {\n    const response = await fetch(endpoint);\n    if (!response.ok) throw new Error(\`HTTP error! status: \${response.status}\`);\n    return await response.json();\n  } catch (error) {\n    console.error('資料獲取失敗:', error);\n    return null;\n  }\n}\n\`\`\`\n\n${title}如果想讓我幫忙檢查具體代碼，隨時把代碼貼給我看哦！🐾`;
     } else if (/潤色|修改|文章|文案|信件|郵件/i.test(lastUserMsg)) {
-      reply = `沒問題！這是我為主人潤色優化後的版本，語氣更得體流暢：📝🌸\n\n> 尊敬的各位夥伴：\n> \n> 感謝大家的持續協作與支持。針對近期推進的項目要點，我們已整理最新進展與後續里程碑，期待與各位維持高效溝通。如有任何寶貴意見，歡迎隨時交流探討。\n> \n> 祝 工作順心！\n\n**潤色亮點說明**：\n- 提煉了核心意圖，刪除冗贅詞彙\n- 提升了商務與團隊溝通的和諧專業度\n\n如果需要調整為更活潑或更嚴肅的風格，告訴我一聲就好！✨`;
+      reply = `沒問題！這是我為${title}潤色優化後的版本，語氣更得體流暢：📝🌸\n\n> 尊敬的各位夥伴：\n> \n> 感謝大家的持續協作與支持。針對近期推進的項目要點，我們已整理最新進展與後續里程碑，期待與各位維持高效溝通。如有任何寶貴意見，歡迎隨時交流探討。\n> \n> 祝 工作順心！\n\n**潤色亮點說明**：\n- 提煉了核心意圖，刪除冗贅詞彙\n- 提升了商務與團隊溝通的和諧專業度\n\n如果需要調整為更活潑或更嚴肅的風格，告訴我一聲就好！✨`;
     } else if (/總結|摘要|核心/i.test(lastUserMsg)) {
-      reply = `已經幫主人提煉好精華重點啦！📋✨\n\n- 📌 **核心洞察**：聚焦關鍵目標，化繁為簡。\n- ⚡ **行動指南**：優先處理高價值且具槓桿效應的事項。\n- 💡 **後續建議**：保持迭代節奏，定時回顧反饋。\n\n需要我針對其中哪一點做更深度的展開嗎？🐾`;
+      reply = `已經幫${title}提煉好精華重點啦！📋✨\n\n- 📌 **核心洞察**：聚焦關鍵目標，化繁為簡。\n- ⚡ **行動指南**：優先處理高價值且具槓桿效應的事項。\n- 💡 **後續建議**：保持迭代節奏，定時回顧反饋。\n\n需要我針對其中哪一點做更深度的展開嗎？🐾`;
     } else if (/番茄鐘|專注|工作|累|休息/i.test(lastUserMsg)) {
-      reply = `主人辛苦啦！現在就為你開啟 **25 分鐘專注模式** ⏱️🌸\n\n在接下來的 25 分鐘裡，我會安靜地趴在桌面上陪伴你，專注於手頭最重要的任務。\n\n記得：\n1. 關閉干擾性的社群通知 🔕\n2. 準備好一杯溫水 ☕\n3. 倒計時結束後，我會提醒你站起來活動筋骨哦！加油！💪`;
+      reply = `${title}辛苦啦！現在就為你開啟 **25 分鐘專注模式** ⏱️🌸\n\n在接下來的 25 分鐘裡，我會安靜地趴在桌面上陪伴你，專注於手頭最重要的任務。\n\n記得：\n1. 關閉干擾性的社群通知 🔕\n2. 準備好一杯溫水 ☕\n3. 倒計時結束後，我會提醒你站起來活動筋骨哦！加油！💪`;
     } else if (/你好|嗨|早安|午安|晚安/i.test(lastUserMsg)) {
       const hours = new Date().getHours();
       let timeGreet = '今天也是活力充沛的一天！';
@@ -90,9 +101,9 @@ class AIService {
       else if (hours < 18) timeGreet = '下午也要維持好心情，記得喝水哦～ 🍵';
       else timeGreet = '夜晚很溫柔，今天忙完了嗎？辛苦啦！🌙';
 
-      reply = `嗨嗨主人！很高興看到你！🐾❤️\n\n${timeGreet}\n\n我是你的桌面靈動小夥伴，無論是工作解惑、代碼編寫，或是無聊時的小吐槽，我都一直在這裡陪著你哦～ 想聊聊什麼呢？✨`;
+      reply = `嗨嗨${title}！很高興看到你！🐾❤️\n\n${timeGreet}\n\n我是你的桌面靈動小夥伴，無論是工作解惑、代碼編寫，或是無聊時的小吐槽，我都一直在這裡陪著你哦～ 想聊聊什麼呢？✨`;
     } else {
-      reply = `我聽到啦！主人說的是：「${lastUserMsg}」✨\n\n身為住在你桌面上的小夥伴，我總是隨時準備好為你分憂解難！🐾\n\n💡 **貼心小提示**：\n目前處於**內建離線智慧模式**。如果你希望解鎖更強大的推理、即時聯網或長文深度解答，可以點擊右上角的 **⚙️ 設定**，填入你的 OpenAI、Gemini 或本機 Ollama 端點，我立刻就能變身成全能超級大腦哦！🚀`;
+      reply = `我聽到啦！${title}說的是：「${lastUserMsg}」✨\n\n身為住在你桌面上的小夥伴，我總是隨時準備好為你分憂解難！🐾\n\n💡 **貼心小提示**：\n目前處於**內建離線智慧模式**。如果你希望解鎖更強大的推理、即時聯網或長文深度解答，可以點擊右上角的 **⚙️ 設定**，填入你的 OpenAI、Gemini 或本機 Ollama 端點，我立刻就能變身成全能超級大腦哦！🚀`;
     }
 
     // Simulate natural streaming typing effect
@@ -123,7 +134,7 @@ class AIService {
       model: model,
       stream: true,
       messages: [
-        { role: 'system', content: this.systemPrompt },
+        { role: 'system', content: this.buildSystemPrompt() },
         ...messages
       ]
     };
@@ -202,7 +213,7 @@ class AIService {
 
     const payload = {
       systemInstruction: {
-        parts: [{ text: this.systemPrompt }]
+        parts: [{ text: this.buildSystemPrompt() }]
       },
       contents: contents
     };
@@ -265,7 +276,7 @@ class AIService {
     const payload = {
       model: model,
       max_tokens: 2048,
-      system: this.systemPrompt,
+      system: this.buildSystemPrompt(),
       messages: claudeMessages,
       stream: true
     };
@@ -326,7 +337,7 @@ class AIService {
       model: model,
       stream: true,
       messages: [
-        { role: 'system', content: this.systemPrompt },
+        { role: 'system', content: this.buildSystemPrompt() },
         ...messages
       ]
     };

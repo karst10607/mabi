@@ -140,6 +140,10 @@ hy3d-venv/Scripts/python.exe make_closed.py
 - `pet.js` 動態 `import('./rig2d.js')`，`mountRig()` / `disposeRig()` 成對呼叫，
   切換 skin 時會銷毀 WebGL context 與 canvas。
 - 互動：摸摸 → 脈動 + 眨眼；餵食 → 點頭；玩 → 甩尾。
+- 「牠對你的稱呼」存在 `aurapet_user_title`（預設「主人」）。問候、摸摸台詞、
+  待機台詞、內建回覆與 API 的 system prompt 都會套用；API 路徑是在送出前把
+  prompt 裡的「主人」換成稱呼，再補一句 `請以「<稱呼>」稱呼使用者`。
+- cat2d 會把 `body` 加上 `skin-rig` class，講話泡泡改用小視窗專屬的位置（見 #17）。
 
 ---
 
@@ -229,6 +233,30 @@ hy3d-venv/Scripts/python.exe make_closed.py
     乾淨 clone 後 `npm install` 不會有 three，cat2d 會直接載入失敗。
     → 補 `"dependencies": { "three": "^0.186.1" }`。
 
+16. **呼吸時寵物後面浮出一個比較大的半透明貓影**
+    有兩個來源，兩個都修了：
+    (a) `.pet-graphic` 的 `filter: drop-shadow(0 8px 14px rgba(0,0,0,0.3))`。
+        SVG skin 看起來像光暈，但照片貓的剪影被模糊、偏移後變成
+        一隻「比較大的貓」墊在後面，`floatPet` 上下浮動時更明顯。
+        → rig mode 改成 `filter: none`。alpha 驗證：有陰影約 309k、
+        移除後約 147k。
+    (b) 桌面上同時存在**第二個 AuraPet 實例**（先前測試殘留，視窗只差 2px，
+        兩個都 always-on-top）。前貓呼吸上浮時就露出後貓的輪廓，這才是
+        使用者看到「而且更多了」的主因。CDP 的 `Page.captureScreenshot`
+        只會截單一視窗，所以先前驗證看不到它；要用 OS 層截圖
+        （PowerShell `CopyFromScreen`）或列舉視窗才會現形。
+        → 關掉殘留實例，並在 `main.js` 加 `requestSingleInstanceLock()`：
+        第二次啟動直接退出，只把既有視窗叫回來。
+    教訓：透明視窗的視覺驗證要同時看「視窗內部」與「桌面實際合成結果」，
+    兩者不一致時先懷疑有其他視窗疊著。
+
+17. **講話泡泡蓋住貓臉**
+    泡泡原本 `top: 36px` 置中，在 240×290 的視窗正好壓在眼睛上。
+    貓是照片、臉佔畫面中央，往上移沒有空間。
+    → 只在 cat2d（`body.skin-rig`）把泡泡改成貼著底部狀態列上方
+    （`bottom: 62px`），尾巴翻成朝上；臉與胸口完全露出來。
+    泡泡同時加 `pointer-events: none`，不會擋住摸貓。
+
 **捲動問題的驗證方式**：不能只用 CDP `Input.dispatchMouseEvent`，合成事件不會打到
 原生捲軸。改用 PowerShell `SetCursorPos` + `mouse_event` 送出 OS 層級輸入，
 分別測「滾輪停在 tabs／footer／遮罩」、「點捲軸軌道」、「拖曳捲軸拇指」三種操作，
@@ -257,8 +285,6 @@ hy3d-venv/Scripts/python.exe make_closed.py
 - **閉眼貼圖要不要改用 AI 生成**：現在的閉眼是 inpaint 補丁，近看偏糊。
 - **表情要擴充到哪些**：目前只有眨眼、凝視、耳朵、尾巴；sleepy／eating 還沒有專屬表情。
 - **凝視是否要跟滑鼠**：`uGaze` 已可用，尚未接到滑鼠座標。
-- **講話泡泡會蓋住貓臉**：這是原本所有 skin 都有的版面行為，對 198 px 高的貓更明顯，
-  要不要為 cat2d 調整版面。
 - **是否把 cat2d 設為預設 skin**（現在預設仍是 kitsune）。
 - **寵物視窗的設定面板本體是否要重排**：捲動問題已修（見 #12），
   但在 240×290 下仍只能看到約 156 px 的內容，AI 模型設定得滾很久。

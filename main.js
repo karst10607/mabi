@@ -261,15 +261,23 @@ function registerShortcuts() {
   });
 }
 
-app.whenReady().then(() => {
-  createMainWindow();
-  createTray();
-  registerShortcuts();
+if (!app.requestSingleInstanceLock()) {
+  // A second pet window would overlap the first and read as a ghost cat
+  // peeking out whenever the front one breathes.
+  app.quit();
+} else {
+  app.on('second-instance', showOrRestoreWindow);
 
-  app.on('activate', () => {
-    showOrRestoreWindow();
+  app.whenReady().then(() => {
+    createMainWindow();
+    createTray();
+    registerShortcuts();
+
+    app.on('activate', () => {
+      showOrRestoreWindow();
+    });
   });
-});
+}
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();

@@ -20,6 +20,7 @@ class PetEngine {
     const savedSkin = localStorage.getItem('aurapet_skin');
     this.skin = KNOWN_SKINS.includes(savedSkin) ? savedSkin : 'kitsune';
     this.nickname = localStorage.getItem('aurapet_name') || 'Lumi';
+    this.userTitle = localStorage.getItem('aurapet_user_title') || '主人';
     this.soundEnabled = localStorage.getItem('aurapet_sound') !== 'false';
     this.autoSpeech = localStorage.getItem('aurapet_speech') !== 'false';
     
@@ -45,7 +46,7 @@ class PetEngine {
 
     // Show initial welcome speech
     setTimeout(() => {
-      this.say(`主人好呀！我是 ${this.nickname}，今天也陪著你哦～ ✨`, 4500);
+      this.say(`${this.userTitle}好呀！我是 ${this.nickname}，今天也陪著你哦～ ✨`, 4500);
     }, 600);
   }
 
@@ -370,6 +371,7 @@ class PetEngine {
 
     this.container.innerHTML = svgHtml;
     this.container.classList.toggle('rig-mode', this.skin === 'cat2d');
+    document.body.classList.toggle('skin-rig', this.skin === 'cat2d');
     if (this.skin === 'cat2d') this.mountRig();
   }
 
@@ -431,9 +433,9 @@ class PetEngine {
 
     const patLines = [
       '好舒服～ 呼嚕呼嚕 (*/ω＼*)',
-      '最喜歡主人摸摸我啦！❤️',
+      `最喜歡${this.userTitle}摸摸我啦！❤️`,
       '親密度上升中～ 蹭蹭你的手！',
-      '今天也很努力呢，主人最棒了！',
+      `今天也很努力呢，${this.userTitle}最棒了！`,
       '喵嗚～ 元氣充滿！'
     ];
     this.say(patLines[Math.floor(Math.random() * patLines.length)], 3000);
@@ -590,12 +592,12 @@ class PetEngine {
         timeQuotes.push('下班後記得留點時間做讓自己開心的事哦！');
       } else {
         timeQuotes.push('夜深了，螢幕光很刺眼，要早點休息呀 🌙');
-        timeQuotes.push('夜貓子主人，別太熬夜，身體最重要哦～ 💤');
+        timeQuotes.push(`夜貓子${this.userTitle}，別太熬夜，身體最重要哦～ 💤`);
       }
 
       const idleQuotes = [
         '按 Option+Space 可以隨時召喚我的完整 AI 助手形態哦！💬',
-        '主人，我隨時準備好為你解答問題或寫代碼啦 💻',
+        `${this.userTitle}，我隨時準備好為你解答問題或寫代碼啦 💻`,
         '動一動手腕，喝口水，我一直陪著你呢 🌸',
         '想聊聊天嗎？點擊我的肚子也可以展開對話視窗哦！'
       ];
@@ -616,6 +618,11 @@ class PetEngine {
     this.nickname = newName || 'Lumi';
     localStorage.setItem('aurapet_name', this.nickname);
     if (this.petNameBadge) this.petNameBadge.textContent = `${this.nickname} ✦`;
+  }
+
+  setUserTitle(title) {
+    this.userTitle = title || '主人';
+    localStorage.setItem('aurapet_user_title', this.userTitle);
   }
 }
 
