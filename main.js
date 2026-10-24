@@ -22,21 +22,25 @@ const WINDOW_SIZES = {
   chat: { width: 460, height: 680 }
 };
 
-// Screen-edge roaming. The pet hops around the current display's work area
-// instead of walking; the seated rig has no walk cycle.
+// Screen-edge roaming. The pet walks along its current row of the work area;
+// `speed` is px/s and stays slow enough that the four-legged gait reads as a
+// stroll rather than a dash.
 const ROAM = {
   minDelay: 6000,
   maxDelay: 14000,
   minDistance: 110,
-  tickMs: 16
+  speed: 78,
+  // The walk is time-based, so a 30 Hz window move matches the 30 fps gait and
+  // halves the per-frame cost of resizing an always-on-top transparent window.
+  tickMs: 33
 };
 
 let roamEnabled = false;
 let roamTimer = null;
-let hopTimer = null;
+let walkTimer = null;
 let roaming = false;
 let uiBusy = false;
-let lastHopFrameAt = 0;
+let lastWalkFrameAt = 0;
 
 const APP_SETTINGS_FILE = () => path.join(app.getPath('userData'), 'app-settings.json');
 
@@ -180,10 +184,10 @@ function clearRoamTimer() {
   }
 }
 
-function stopHop() {
-  if (hopTimer) {
-    clearInterval(hopTimer);
-    hopTimer = null;
+function stopWalk() {
+  if (walkTimer) {
+    clearInterval(walkTimer);
+    walkTimer = null;
   }
   if (!roaming) return;
   roaming = false;
@@ -198,8 +202,40 @@ function scheduleRoam(delay = randomBetween(ROAM.minDelay, ROAM.maxDelay)) {
   if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
   roamTimer = setTimeout(() => {
     roamTimer = null;
-    roamHop();
+    roamWalk();
   }, delay);
+}
+
+// A renderer cannot tell a hidden window from a merely unfocused one, and macOS
+// fires no 'hide'/'show' event for this frameless transparent window, so the code
+// that actually moves the window in and out is what tells the pet to park or wake.
+function sendVisibility(visible) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('window-visibility', visible);
+  }
+}
+
+function showPetWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.show();
+  sendVisibility(true);
+  scheduleRoam(2000);
+}
+
+function hidePetWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  clearRoamTimer();
+  stopWalk();
+  mainWindow.hide();
+  sendVisibility(false);
+}
+
+function minimizePetWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  clearRoamTimer();
+  stopWalk();
+  mainWindow.minimize();
+  sendVisibility(false);
 }
 
 function setRoamEnabled(enabled) {
@@ -210,7 +246,7 @@ function setRoamEnabled(enabled) {
     if (item) item.checked = roamEnabled;
   }
   if (!roamEnabled) {
-    // Let a hop that is already airborne land; just don't schedule another.
+    // Stop any walk that is still scheduled; one already in progress finishes.
     clearRoamTimer();
     return;
   }
@@ -224,30 +260,15 @@ function pickRoamTarget() {
   const maxY = workArea.y + workArea.height - bounds.height;
   if (maxX < workArea.x || maxY < workArea.y) return null;
 
-  // Mostly the taskbar edge, with occasional side/top perches and free jumps.
-  const roll = Math.random();
-  let x;
-  let y;
-  if (roll < 0.5) {
-    x = randomBetween(workArea.x, maxX);
-    y = maxY;
-  } else if (roll < 0.7) {
-    x = Math.random() < 0.5 ? workArea.x : maxX;
-    y = randomBetween(workArea.y, maxY);
-  } else if (roll < 0.82) {
-    x = randomBetween(workArea.x, maxX);
-    y = workArea.y;
-  } else {
-    x = randomBetween(workArea.x, maxX);
-    y = randomBetween(workArea.y, maxY);
-  }
-
-  const target = { x: Math.round(x), y: Math.round(y) };
-  if (Math.hypot(target.x - bounds.x, target.y - bounds.y) < ROAM.minDistance) return null;
-  return target;
+  // A walking pet stays on the ground it is on: it only changes x, so it never
+  // has to leave the floor to reach the next spot.
+  const y = Math.min(Math.max(bounds.y, workArea.y), maxY);
+  const x = randomBetween(workArea.x, maxX);
+  if (Math.abs(x - bounds.x) < ROAM.minDistance) return null;
+  return { x: Math.round(x), y: Math.round(y) };
 }
 
-function roamHop() {
+function roamWalk() {
   if (!roamEnabled || uiBusy || currentMode !== 'pet' || roaming) return;
   if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
 
@@ -261,52 +282,51 @@ function roamHop() {
   const startX = startBounds.x;
   const startY = startBounds.y;
   // Pin the design size rather than the current bounds: Windows adds ~1 DIP
-  // per hop when each hop re-pins whatever size it just reported.
-  const hopWidth = WINDOW_SIZES.pet.width;
-  const hopHeight = WINDOW_SIZES.pet.height;
+  // per move when each step re-pins whatever size it just reported.
+  const walkWidth = WINDOW_SIZES.pet.width;
+  const walkHeight = WINDOW_SIZES.pet.height;
   const dx = target.x - startX;
-  const dy = target.y - startY;
-  const distance = Math.hypot(dx, dy);
-  const duration = Math.round(Math.min(1050, Math.max(460, 380 + distance * 0.55)));
-  const lift = Math.round(22 + Math.min(70, distance * 0.16));
-  const { workArea } = screen.getDisplayMatching(startBounds);
+  // Walking keeps the window exactly level; only x changes. ROAM.speed is the
+  // cruise speed, so crossing a wide display legitimately takes tens of seconds.
+  const duration = Math.round(Math.min(24000, Math.max(900, (Math.abs(dx) / ROAM.speed) * 1000)));
+  const ramp = 0.15;
+  const cruise = 1 / (1 - ramp);
   const startedAt = Date.now();
-  let announcedAir = false;
 
   roaming = true;
-  mainWindow.webContents.send('roam-state', 'takeoff');
+  mainWindow.webContents.send('roam-state', dx > 0 ? 'walk-right' : 'walk-left');
 
-  hopTimer = setInterval(() => {
+  walkTimer = setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) {
-      stopHop();
+      stopWalk();
       return;
     }
     const t = Math.min(1, (Date.now() - startedAt) / duration);
-    if (!announcedAir && t > 0.2) {
-      announcedAir = true;
-      mainWindow.webContents.send('roam-state', 'air');
-    }
-    const eased = t * t * (3 - 2 * t);
+    // Trapezoidal speed profile: the pet eases into and out of its stride but
+    // holds one steady pace between, which is what a walk looks like.
+    let eased;
+    if (t < ramp) eased = (cruise * t * t) / (2 * ramp);
+    else if (t > 1 - ramp) {
+      const u = 1 - t;
+      eased = 1 - (cruise * u * u) / (2 * ramp);
+    } else eased = cruise * (ramp / 2 + (t - ramp));
     const x = Math.round(startX + dx * eased);
-    // Clamp the arc to the work area: a hop along the top edge would otherwise
-    // lift the whole window (and the pet) above the screen.
-    const y = Math.max(workArea.y, Math.round(startY + dy * eased - Math.sin(Math.PI * t) * lift));
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      logCrash(`bad hop frame x=${x} y=${y} target=${JSON.stringify(target)} start=${startX},${startY} d=${distance} dur=${duration} lift=${lift} t=${t}`);
-      stopHop();
+    if (!Number.isFinite(x)) {
+      logCrash(`bad walk frame x=${x} target=${JSON.stringify(target)} start=${startX},${startY} d=${dx} dur=${duration} t=${t}`);
+      stopWalk();
       scheduleRoam();
       return;
     }
-    lastHopFrameAt = Date.now();
+    lastWalkFrameAt = Date.now();
     // setPosition on Windows grows the window a little on every call at this
-    // DPI; pinning the size keeps a hop from turning the pet into a balloon.
-    mainWindow.setBounds({ x, y, width: hopWidth, height: hopHeight }, false);
+    // DPI; pinning the size keeps a walk from turning the pet into a balloon.
+    mainWindow.setBounds({ x, y: startY, width: walkWidth, height: walkHeight }, false);
 
     if (t >= 1) {
-      clearInterval(hopTimer);
-      hopTimer = null;
+      clearInterval(walkTimer);
+      walkTimer = null;
       roaming = false;
-      mainWindow.webContents.send('roam-state', 'land');
+      mainWindow.webContents.send('roam-state', 'idle');
       savePetPosition();
       scheduleRoam();
     }
@@ -353,7 +373,12 @@ function createMainWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
-      spellcheck: false
+      spellcheck: false,
+      // macOS marks a frameless transparent always-on-top window as backgrounded
+      // as soon as it loses focus. Throttling then freezes every animation frame
+      // while the pet is still on screen, so the window is left showing a stale
+      // (often black) surface until it repaints — a flicker that looks random.
+      backgroundThrottling: false
     }
   });
 
@@ -378,7 +403,7 @@ function createMainWindow() {
 
   mainWindow.on('closed', () => {
     clearRoamTimer();
-    stopHop();
+    stopWalk();
     mainWindow = null;
   });
 
@@ -387,7 +412,7 @@ function createMainWindow() {
     // Hops move the window too; don't treat those frames as a user drag.
     // The final setPosition's 'move' can arrive just after landing, so also
     // ignore anything right after the last hop frame.
-    if (roaming || Date.now() - lastHopFrameAt < 150) return;
+    if (roaming || Date.now() - lastWalkFrameAt < 150) return;
     clearRoamTimer();
     if (currentMode === 'pet') scheduleRoam(randomBetween(5000, 9000));
     if (currentMode !== 'pet') return;
@@ -402,19 +427,11 @@ function createMainWindow() {
   mainWindow.webContents.on('did-finish-load', () => {
     // A renderer reload may have left the settings modal state behind.
     uiBusy = false;
+    // A freshly loaded renderer starts its animation loop; a hidden window must
+    // be told to park it again instead of drawing off screen.
+    sendVisibility(mainWindow.isVisible());
     scheduleRoam(9000);
   });
-
-  mainWindow.on('hide', () => {
-    clearRoamTimer();
-    stopHop();
-  });
-  mainWindow.on('minimize', () => {
-    clearRoamTimer();
-    stopHop();
-  });
-  mainWindow.on('show', () => scheduleRoam(2000));
-  mainWindow.on('restore', () => scheduleRoam(2000));
 
   mainWindow.webContents.on('render-process-gone', (event, details) => {
     if (details.reason === 'clean-exit') return;
@@ -433,7 +450,7 @@ function registerIpcHandlers() {
       scheduleRoam(2500);
     } else {
       clearRoamTimer();
-      stopHop();
+      stopWalk();
     }
     const targetSize = WINDOW_SIZES[mode] || WINDOW_SIZES.pet;
     const [curX, curY] = mainWindow.getPosition();
@@ -473,14 +490,12 @@ function registerIpcHandlers() {
   });
 
   ipcMain.on('minimize-app', () => {
-    clearRoamTimer();
-    if (mainWindow) mainWindow.minimize();
+    minimizePetWindow();
   });
 
   // Clicking close in Pet/Chat window hides to background/tray instead of destroying
   ipcMain.on('close-app', () => {
-    clearRoamTimer();
-    if (mainWindow) mainWindow.hide();
+    hidePetWindow();
   });
 
   // The settings modal covers the pet window; pausing hops keeps it still
@@ -491,7 +506,12 @@ function registerIpcHandlers() {
     else scheduleRoam(2500);
   });
 
-  ipcMain.on('pet-activity', () => scheduleRoam(randomBetween(5000, 9000)));
+  // Pointer activity only reaches the pet while its window is on screen, so this
+  // doubles as the safety net that re-wakes a loop parked by a missed show.
+  ipcMain.on('pet-activity', () => {
+    sendVisibility(true);
+    scheduleRoam(randomBetween(5000, 9000));
+  });
 
   ipcMain.handle('get-roam-enabled', () => roamEnabled);
   ipcMain.on('set-roam-enabled', (event, enabled) => setRoamEnabled(enabled));
@@ -508,9 +528,8 @@ function showOrRestoreWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     createMainWindow();
   } else {
-    mainWindow.show();
+    showPetWindow();
     mainWindow.focus();
-    scheduleRoam(2000);
   }
 }
 
@@ -581,12 +600,10 @@ function createTray() {
           return;
         }
         if (mainWindow.isVisible()) {
-          clearRoamTimer();
-          mainWindow.hide();
+          hidePetWindow();
         } else {
-          mainWindow.show();
+          showPetWindow();
           mainWindow.focus();
-          scheduleRoam(2000);
         }
       }
     },
@@ -602,7 +619,7 @@ function createTray() {
     },
     {
       id: 'roam-toggle',
-      label: '到處跳 (螢幕邊緣)',
+      label: '到處走 (螢幕邊緣)',
       type: 'checkbox',
       checked: roamEnabled,
       click: (item) => setRoamEnabled(item.checked)
@@ -656,8 +673,7 @@ function createTray() {
       if (mainWindow.isVisible()) {
         mainWindow.focus();
       } else {
-        mainWindow.show();
-        scheduleRoam(2000);
+        showPetWindow();
       }
     }
   });
@@ -672,7 +688,7 @@ function registerShortcuts() {
       return;
     }
     if (!mainWindow.isVisible()) {
-      mainWindow.show();
+      showPetWindow();
       mainWindow.focus();
     }
     const nextMode = currentMode === 'pet' ? 'chat' : 'pet';
@@ -686,9 +702,9 @@ function registerShortcuts() {
       return;
     }
     if (mainWindow.isVisible() && mainWindow.isFocused()) {
-      mainWindow.hide();
+      hidePetWindow();
     } else {
-      mainWindow.show();
+      showPetWindow();
       mainWindow.focus();
     }
   });
@@ -716,7 +732,7 @@ if (!app.requestSingleInstanceLock()) {
 
 app.on('before-quit', () => {
   clearRoamTimer();
-  stopHop();
+  stopWalk();
   if (currentMode === 'pet') savePetPosition();
 });
 

@@ -311,49 +311,23 @@ body.posture-belly .pet-shadow {
   margin-top: -12px;
 }
 
-body.posture-run .pet-graphic.rig-mode {
+body.posture-walk .pet-graphic.rig-mode {
   width: 158px;
   height: 202px;
 }
 
-body.posture-run .pet-shadow {
+body.posture-walk .pet-shadow {
   width: 104px;
   height: 14px;
   margin-top: -10px;
 }
 
-/* Screen-edge hopping. The main process moves the window; these classes add
-   the crouch/stretch a moving rectangle cannot show and keep the idle float
-   from fighting the arc. */
-body.roam-takeoff .pet-graphic,
-body.roam-air .pet-graphic,
-body.roam-land .pet-graphic {
-  transform-origin: 50% 92%;
-}
-
-body.roam-takeoff .pet-avatar-wrapper,
-body.roam-takeoff .pet-shadow,
-body.roam-air .pet-avatar-wrapper,
-body.roam-land .pet-avatar-wrapper {
+/* Screen-edge roaming. The main process walks the window horizontally; the rig
+   supplies the gait, so all that is left here is to stop the idle float from
+   bobbing the pet while it is mid-stride. */
+body.roam-walk .pet-avatar-wrapper,
+body.roam-walk .pet-shadow {
   animation: none;
-}
-
-body.roam-takeoff .pet-graphic {
-  animation: roamCrouch 0.18s ease-out forwards;
-}
-
-body.roam-air .pet-graphic {
-  animation: roamStretch 0.3s ease-out forwards;
-}
-
-body.roam-air .pet-shadow {
-  animation: none;
-  opacity: 0.12;
-  transform: scale(0.7);
-}
-
-body.roam-land .pet-graphic {
-  animation: roamLand 0.36s cubic-bezier(0.22, 1.4, 0.36, 1);
 }
 
 .rig2d-host {
@@ -1558,23 +1532,6 @@ label {
   0% { transform: scale(1); opacity: 0.6; }
   50% { transform: scale(0.82); opacity: 0.35; }
   100% { transform: scale(1); opacity: 0.6; }
-}
-
-@keyframes roamCrouch {
-  0% { transform: scale(1, 1) translateY(0); }
-  100% { transform: scale(1.06, 0.9) translateY(3px); }
-}
-
-@keyframes roamStretch {
-  0% { transform: scale(1.06, 0.9) translateY(3px); }
-  100% { transform: scale(0.97, 1.05) translateY(-3px); }
-}
-
-@keyframes roamLand {
-  0% { transform: scale(0.97, 1.05) translateY(-3px); }
-  35% { transform: scale(1.08, 0.88) translateY(4px); }
-  70% { transform: scale(0.99, 1.02) translateY(-1px); }
-  100% { transform: scale(1, 1) translateY(0); }
 }
 
 @keyframes popInBubble {

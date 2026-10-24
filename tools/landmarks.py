@@ -56,6 +56,15 @@ def main():
         d.ellipse([px - 6, py - 6, px + 6, py + 6], outline=(255, 150, 0), width=2)
         cross(d, px, py, 10, (255, 150, 0))
 
+    for i, lg in enumerate(rig.get("legs", [])):
+        ellipse(d, lg["center"], lg["sigma"], (255, 0, 255))
+        cross(d, *lg["center"], 8, (255, 0, 255))
+        px, py = lg["pivot"]
+        d.ellipse([px - 6, py - 6, px + 6, py + 6], outline=(255, 255, 0), width=2)
+        cross(d, px, py, 12, (255, 255, 0))
+        d.line([lg["center"], [px, py]], fill=(255, 255, 0), width=1)
+        d.text((lg["center"][0] + 10, lg["center"][1]), str(i), fill=(255, 255, 0))
+
     b = rig.get("breath")
     if b:
         ellipse(d, b["center"], b["sigma"], (0, 160, 255))

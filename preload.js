@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onRoamState: (callback) => {
     ipcRenderer.on('roam-state', (_event, state) => callback(state));
   },
+  onWindowVisibility: (callback) => {
+    ipcRenderer.on('window-visibility', (_event, visible) => callback(visible));
+  },
   setUiBusy: (busy) => ipcRenderer.send('set-ui-busy', busy),
   notifyPetActivity: () => ipcRenderer.send('pet-activity'),
   getRoamEnabled: () => ipcRenderer.invoke('get-roam-enabled'),

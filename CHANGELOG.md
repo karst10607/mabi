@@ -2,6 +2,33 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.5.0] - 2026-10-24
+
+### Changed
+
+- **「跑過來」改成四腳慢步**：`renderer/rig2d.js` 的步態從「彈跳＋前後腳兩段」換成真正的四足步態——每隻腳有自己的肩／髖關節（`uLegPivot[4]`、`uLegAngle`、`uLegLift`），依 4-beat lateral sequence 以相位 `[0.25, 0.75, 0, 0.5]`、著地率 68% 輪流舉步，任何時刻至少三隻腳踩地。身體不再隨步伐上下擺（移除 `runHeadBob` 與 `angleZ` 的彈跳項），`pet.js` 的 `applyPerspectiveTransform()` 也拿掉 `hopLift`／`squash`／`lean`。
+- **條碼、阿咪、kk狗都補了站姿Walking素材**：新增 `renderer/models/ami2d/ami_walk_*` 與 `renderer/models/kk2d/kk_walk_*`（原只有條碼有 `cat_walk_*`）。三張的 `rig.legs` 各 4 條、`rig.gait` 決定擺幅與舉腳高度，`rig2d.js` 內不含任何物種專屬常數。
+- **螢幕邊緣漫遊從跳躍改成散步**：`main.js` 的 `roamWalk()` 只改變視窗 x（全程保持水平），速度 78 px/s、採梯形速度曲線（前 15% 加速、中段等速、後 15% 減速）；`renderer/styles.css` 刪除 `roam-takeoff`／`roam-air`／`roam-land` 與對應 keyframes，改為 `body.roam-walk` 只暫停 idle 漂浮。托盤選單項目改名為「到處走 (螢幕邊緣)」。
+- 透視進場四段場景改名：`far-run-in` → `far-walk-in`，走位速度降到 38–54 px/s，台詞改為「從遠方慢慢走過來…」。
+- **閒置不再空轉**：`rig2d.js` 的動畫迴圈改成自我排程（`schedule()`／`wake()`／`stop()`），rAF 沒辦法跑得比 vsync 還慢，所以兩幀之間的空檔改用 `setTimeout` 等。還有東西在緩動時走 30fps（`ACTIVE_FRAME_MS`），全部到位後降到約 9fps（`IDLE_FRAME_MS`）；耳朵抖動原本是 `sin(t*34)` 取樣，在低幀率會出錯，改成自帶 0.42 秒包絡的獨立計時器。實測繪製次數 27–30 次/秒 → 10–14 次/秒，renderer CPU 7.4/7.7% → 3.9/5.4%（同一行程內交錯 A/B）。
+- `pet.js` 的位移迴圈（原本 60fps 永不停止）改成只在真的在走路時執行：`runPerspectiveSequence()` 呼叫 `startLocomotionLoop()`，`isLocomotionSettled()` 判定沒剩路點、沒在移動時自行停下（歸零時把 `L.x`／`L.z` 吸附到 0，否則殘留 0.1–0.4 的偏移會讓它永遠停不下來）。
+- 漫遊時的視窗位移從 16ms 放寬到 33ms（`ROAM.tickMs`）：步態是時間基的，30Hz 的視窗移動剛好對應 30fps，也讓透明置頂視窗的每幀 resize 成本減半。
+
+### Added
+
+- `tools/eye_grid.py`：把貼圖的眼睛區域依 `*_meta.json` 的中心點裁出、放大並疊上來源座標網格，用來量 `eyes.rx/ry`。
+- `docs/pet-modeling-notes.md` 新增「走路循環（四腳慢步）」章節，並把漫遊章節改寫為散步版。
+- `docs/pet-modeling-notes.md` 新增坑 #20：`pip install` 找不到相容 wheel 時會**無訊息退回源碼編譯**——這台 macOS 12 裝 `opencv-python-headless` 拖出 6 個 clang job、load average 180、跑了近一小時。規則改成 `--only-binary=:all:`＋鎖版本＋不加 `--quiet`。
+
+### Fixed
+
+- `*_walk_rig.json` 的 `eyes.rx/ry` 之前填成整顆眼球的半徑，而倉庫慣例是**虹膜**半徑（`tools/make_closed.py` 會再乘 2.85／2.80 當眼瞼遮罩），導致閉眼烘焙把半個額頭糊掉。三張 walk 貼圖已改用真實虹膜半徑重烤。
+- 向右漫遊時貓不會鏡像：`setRoamState()` 原本只在 `!walking` 時套用透視變換，`flipX = -1` 永遠進不了 DOM；現在一律套用，`mountRig()` 完成時也補一次。
+- 隱藏／最小化後還在繪製：`mainWindow.on('hide')` 在 macOS 的 frameless 透明置頂視窗上不會觸發（實測 `hide()` 生效、`isVisible()` 變 false，但事件不來），所以改由 `showPetWindow()`／`hidePetWindow()`／`minimizePetWindow()` 這三個實際移動視窗的入口送 `window-visibility`，渲染端對應 `rig2d.wake()`／`stop()`；`did-finish-load` 與 `pet-activity` 各留一條自癒路徑，避免漏掉一條顯示路徑讓貓卡在一張靜止的臉。
+- 不定時閃爍：`rig2d.js` 的 `WebGLRenderer` 加上 `preserveDrawingBuffer: true`。預設值 `false` 表示畫布交給合成器之後緩衝區就失效，任何兩次繪製之間的合成（`floatPet` 的 CSS 動畫、視窗移動、失去焦點）都可能取到一張空表面，貓就閃一下消失；保留緩衝區後合成器永遠拿得到最後畫好的那一幀。實測成本為零（GPU helper 11.7–15.2% → 11.8–15.2%，同一台機器同一量法）。
+- 不定時閃爍（第二項）：視窗一失去焦點就被 Chromium 當成背景而凍結所有 rAF，透明視窗因此停在最後一張（常常是黑的）畫面，改用 `backgroundThrottling: false`。
+- 閃爍調查的負結果：`ignore-gpu-blocklist` 曾在 macOS 被關掉測試，結果 GPU helper 從約 13% 升到約 20%（WebGL 仍是同一張 `ANGLE (Intel Inc., Intel Iris OpenGL Engine, OpenGL 4.1)`），所以這個 switch 在 Mac 上是有用的，維持不變。渲染端本身也不是元兇：兩段各 90 秒、4Hz 的 `Page.captureScreenshot`（714 幀）沒有任何空白或壞幀。
+
 ## [1.4.1] - 2026-10-23
 
 ### Fixed

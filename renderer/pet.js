@@ -9,8 +9,7 @@ const RIG_SKINS = {
     emoji: '🐈',
     defaultName: '條碼',
     species: 'cat',
-    extraPoses: ['side', 'belly'],
-    hasRunPose: true
+    extraPoses: ['side', 'belly']
   },
   ami2d: {
     dir: './models/ami2d',
@@ -18,8 +17,7 @@ const RIG_SKINS = {
     emoji: '🧡',
     defaultName: '阿咪',
     species: 'cat',
-    extraPoses: [],
-    hasRunPose: false
+    extraPoses: []
   },
   kk2d: {
     dir: './models/kk2d',
@@ -27,8 +25,7 @@ const RIG_SKINS = {
     emoji: '🐕‍🦺',
     defaultName: 'KK',
     species: 'dog',
-    extraPoses: [],
-    hasRunPose: false
+    extraPoses: []
   }
 };
 
@@ -55,6 +52,11 @@ const SKIN_EMOJIS = {
 };
 
 const KNOWN_SKINS = ['cat2d', 'ami2d', 'kk2d', 'kitsune', 'shiba', 'cat', 'slime', 'custom_photo'];
+
+// A slow four-legged walk. `speed` is how fast the body crosses the stage and
+// `rate` is the gait cycle speed; at these values roughly two paws leave the
+// ground per second while the body stays level.
+const WALK = { speed: 46, rate: 4.2 };
 
 class PetEngine {
   constructor() {
@@ -95,16 +97,33 @@ class PetEngine {
     this.loco = {
       x: 0,
       z: 0,
-      hopPhase: 0,
       moving: false,
-      forceModeA: false,
       flipX: 1,
-      squash: 0,
+      stepSpeed: WALK.rate,
       waypoints: [],
       sceneIdx: -1,
       lastTime: performance.now(),
+      running: false,
+      rafId: 0,
+    };
+    this.locoTick = (now) => {
+      if (!this.loco.running) return;
+      const dt = Math.min(0.05, (now - (this.loco.lastTime || now)) / 1000);
+      this.loco.lastTime = now;
+      this.stepLocomotion(dt);
+      if (this.isLocomotionSettled()) {
+        this.loco.running = false;
+        this.loco.rafId = 0;
+        return;
+      }
+      this.loco.rafId = requestAnimationFrame(this.locoTick);
     };
     window.petEngine = this;
+
+    // Skins whose walk artwork failed to load; they walk in their sit pose instead
+    this.walkPoseBlocked = new Set();
+    // Screen-edge roaming moves the whole window, so it travels without waypoints
+    this.roamWalking = false;
 
     this.init();
   }
@@ -115,7 +134,7 @@ class PetEngine {
     this.updateStatsDisplay();
     this.setupInteractions();
     this.setupRoam();
-    this.startLocomotionLoop();
+    this.setupWindowVisibility();
     this.startBlinkingLoop();
     this.startSleepParticleLoop();
     this.startAutoSpeechLoop();
@@ -535,10 +554,14 @@ class PetEngine {
     return base;
   }
 
+  isTravelling() {
+    return Boolean(this.loco?.moving || this.roamWalking);
+  }
+
   getRigPoseKey(posture = this.posture, skinId = this.skin) {
     const cfg = RIG_SKINS[skinId];
-    if (this.loco?.moving && cfg?.hasRunPose && !this.loco.forceModeA) {
-      return 'run';
+    if (this.isTravelling() && cfg && !this.walkPoseBlocked.has(skinId)) {
+      return 'walk';
     }
     if ((posture === 'side' || posture === 'belly') && cfg?.extraPoses?.includes(posture)) {
       return posture;
@@ -553,7 +576,7 @@ class PetEngine {
     document.body.classList.toggle('posture-rest', poseKey === 'rest');
     document.body.classList.toggle('posture-side', poseKey === 'side');
     document.body.classList.toggle('posture-belly', poseKey === 'belly');
-    document.body.classList.toggle('posture-run', poseKey === 'run');
+    document.body.classList.toggle('posture-walk', poseKey === 'walk');
   }
 
   syncPostureUI(opts = {}) {
@@ -692,24 +715,32 @@ class PetEngine {
         meta,
         `${cfg.dir}/${basePrefix}_tex_closed.png`
       );
-      rig.setSleepy(this.isSleepyPosture() && poseKey !== 'run', true);
-      rig.setLocomotion(Boolean(this.loco?.moving), this.loco?.stepSpeed || 12.5);
+      rig.setSleepy(this.isSleepyPosture() && poseKey !== 'walk', true);
+      rig.setLocomotion(this.isTravelling(), this.loco?.stepSpeed || WALK.rate);
       rig.setViewport(host.clientWidth, host.clientHeight);
       rig.stepAndRender(0);
+      this.applyPerspectiveTransform();
       this.loadedRigPose = poseKey;
       this.loadedRigSkin = skinId;
 
-      // Pre-cache dedicated running pose (Mode B) in the background without touching active scene
-      if (cfg.hasRunPose && poseKey !== 'run') {
-        import(`${cfg.dir}/${cfg.prefix}_run_meta.js`).then((m) => {
+      // Warm the walk pose in the background so starting to walk never stalls on a texture load
+      if (poseKey !== 'walk') {
+        import(`${cfg.dir}/${cfg.prefix}_walk_meta.js`).then((m) => {
           if (!rig.disposed) {
-            const runPrefix = `${cfg.prefix}_run`;
-            rig.preload(`${cfg.dir}/${runPrefix}_tex.png`, m.default, `${cfg.dir}/${runPrefix}_tex_closed.png`).catch(() => {});
+            const walkPrefix = `${cfg.prefix}_walk`;
+            rig.preload(`${cfg.dir}/${walkPrefix}_tex.png`, m.default, `${cfg.dir}/${walkPrefix}_tex_closed.png`).catch(() => {});
           }
         }).catch(() => {});
       }
       this.rigRetries = 0;
     } catch (err) {
+      // A skin without baked walk artwork keeps its sit pose instead of failing forever
+      if (this.getRigPoseKey(this.posture, skinId) === 'walk') {
+        this.walkPoseBlocked.add(skinId);
+        this.rigRetries = 0;
+        this.mountRig(skinId);
+        return;
+      }
       this.rigRetries = (this.rigRetries || 0) + 1;
       if (this.rigRetries <= 5) {
         setTimeout(() => this.mountRig(skinId), 150 * this.rigRetries);
@@ -764,21 +795,26 @@ class PetEngine {
   }
 
   // ==========================================================
-  // Perspective Locomotion Engine (Mode A: Skeleton Gait + Z-Depth, Mode B: Dedicated Run Pose)
+  // Perspective Locomotion Engine (four-legged walk + Z-depth)
   // ==========================================================
+  // Only a pet that is actually travelling needs a per-frame clock; once the
+  // waypoint queue is empty and the transform is back at the stage plane the
+  // loop parks itself until the next sequence asks for it.
   startLocomotionLoop() {
-    const tick = (now) => {
-      const dt = Math.min(0.05, (now - (this.loco.lastTime || now)) / 1000);
-      this.loco.lastTime = now;
-      this.stepLocomotion(dt);
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
+    if (this.loco.running) return;
+    this.loco.running = true;
+    this.loco.lastTime = performance.now();
+    this.loco.rafId = requestAnimationFrame(this.locoTick);
+  }
+
+  isLocomotionSettled() {
+    const L = this.loco;
+    return L.waypoints.length === 0 && !L.moving && Math.abs(L.x) < 0.1 && Math.abs(L.z) < 0.002;
   }
 
   syncLocomotionPose() {
     if (!this.isRigSkin() || !this.rig2d || this.rig2d.disposed) return;
-    this.rig2d.setLocomotion(this.loco.moving, this.loco.stepSpeed || 12.5);
+    this.rig2d.setLocomotion(this.isTravelling(), this.loco.stepSpeed || WALK.rate);
     const desiredPose = this.getRigPoseKey(this.posture, this.skin);
     if (this.loadedRigPose !== desiredPose && this.targetRigPose !== desiredPose) {
       this.targetRigPose = desiredPose;
@@ -792,8 +828,9 @@ class PetEngine {
     const shadow = wrapper ? wrapper.querySelector('.pet-shadow') : null;
     if (!wrapper || !graphic) return;
 
-    const { x, z, hopPhase, moving, flipX, squash } = this.loco;
-    const isNeutral = !moving && Math.abs(x) < 0.4 && Math.abs(z) < 0.004 && squash < 0.005 && flipX === 1;
+    const { x, z, flipX } = this.loco;
+    const travelling = this.isTravelling();
+    const isNeutral = !travelling && Math.abs(x) < 0.4 && Math.abs(z) < 0.004 && flipX === 1;
     if (isNeutral) {
       wrapper.style.transform = '';
       graphic.style.transform = '';
@@ -810,36 +847,27 @@ class PetEngine {
     // z < 0: close-up foreground (larger + shifted down so the face is centered in the window)
     const scale = Math.max(0.24, Math.min(1.62, 1 / (1 + 1.85 * z)));
     const horizonY = z >= 0 ? (-z * 42) : (-z * 215);
-    const hopLift = moving ? Math.abs(Math.sin(hopPhase)) * 11 * scale : 0;
 
-    const sqX = 1 + squash * 0.11;
-    const sqY = 1 - squash * 0.10;
-    const leanDeg = moving ? Math.sin(hopPhase) * 2.8 : 0;
-
+    // The walk cycle keeps every paw on the ground, so the body must not rise
+    // and fall with it: only depth shifts the pet vertically here.
     wrapper.style.transformOrigin = '50% 88%';
-    wrapper.style.transform = `translate3d(${x.toFixed(1)}px, ${(horizonY - hopLift).toFixed(1)}px, 0) scale(${(scale * sqX).toFixed(3)}, ${(scale * sqY).toFixed(3)})`;
-    graphic.style.transform = `scaleX(${flipX}) rotate(${leanDeg.toFixed(2)}deg)`;
+    wrapper.style.transform = `translate3d(${x.toFixed(1)}px, ${horizonY.toFixed(1)}px, 0) scale(${scale.toFixed(3)}, ${scale.toFixed(3)})`;
+    graphic.style.transform = `scaleX(${flipX})`;
 
     if (shadow) {
-      const airRatio = moving ? Math.abs(Math.sin(hopPhase)) : 0;
-      const shScale = Math.max(0.55, 1 - airRatio * 0.28);
-      shadow.style.transform = `translateY(${(hopLift / Math.max(0.3, scale)).toFixed(1)}px) scale(${shScale.toFixed(2)})`;
-      shadow.style.opacity = (Math.max(0.18, (1 - airRatio * 0.35) * Math.min(1, scale * 1.1))).toFixed(2);
+      shadow.style.transform = `scale(${scale.toFixed(3)})`;
+      shadow.style.opacity = Math.min(1, scale * 1.1).toFixed(2);
     }
   }
 
   stepLocomotion(dt) {
     const L = this.loco;
-    if (L.squash > 0) {
-      L.squash = Math.max(0, L.squash - dt * 3.8);
-    }
 
     if (L.waypoints.length > 0) {
       const wp = L.waypoints[0];
       if (wp.wait > 0 && Math.hypot(wp.x - L.x, (wp.z - L.z) * 140) < 2) {
         if (L.moving) {
           L.moving = false;
-          L.squash = 0.85;
           this.syncLocomotionPose();
         }
         wp.wait -= dt;
@@ -852,20 +880,18 @@ class PetEngine {
         const dz = wp.z - L.z;
         // Convert depth z into equivalent pixel distance for uniform perceived speed
         const dist = Math.hypot(dx, dz * 145);
-        const speed = wp.speed || 135;
+        const speed = wp.speed || WALK.speed;
         if (!L.moving) {
           L.moving = true;
-          L.forceModeA = Boolean(wp.forceModeA);
-          L.stepSpeed = wp.stepSpeed || 13.0;
+          L.stepSpeed = wp.stepSpeed || WALK.rate;
           this.syncLocomotionPose();
         }
         if (Math.abs(dx) > 4) {
-          // cat_run faces front-left by default (flipX = 1 when moving left/forward, -1 when moving right)
+          // The walk textures face front-left, so flip only when travelling right
           L.flipX = dx > 0 ? -1 : 1;
         } else {
           L.flipX = 1;
         }
-        L.hopPhase = (L.hopPhase + dt * (wp.stepSpeed || 13.0)) % (Math.PI * 2);
 
         const stepDist = speed * dt;
         if (dist <= stepDist || dist < 1.5) {
@@ -877,7 +903,6 @@ class PetEngine {
             if (L.waypoints.length === 0) {
               L.moving = false;
               L.flipX = 1;
-              L.squash = 1.0;
               this.syncLocomotionPose();
             }
           }
@@ -888,19 +913,24 @@ class PetEngine {
         }
       }
       this.applyPerspectiveTransform();
-    } else if (L.moving || L.squash > 0 || Math.abs(L.x) > 0.1 || Math.abs(L.z) > 0.002) {
+    } else if (L.moving || Math.abs(L.x) > 0.1 || Math.abs(L.z) > 0.002) {
       if (L.moving) {
         L.moving = false;
         L.flipX = 1;
         this.syncLocomotionPose();
       }
+      // Nothing is queued, so park the pet exactly on the stage plane; clearing the
+      // leftover offset is what lets the locomotion clock stop.
+      L.x = 0;
+      L.z = 0;
       this.applyPerspectiveTransform();
     }
   }
 
-  runPerspectiveSequence(mode = 'far-run-in') {
+  runPerspectiveSequence(mode = 'far-walk-in') {
     const L = this.loco;
     L.waypoints = [];
+    this.startLocomotionLoop();
     if (this.posture !== 'sit') {
       this.setPosture('sit', { silent: true });
     }
@@ -909,71 +939,64 @@ class PetEngine {
       L.x = (Math.random() < 0.5 ? -1 : 1) * 28;
       L.z = 0.92;
       L.moving = true;
-      L.forceModeA = false;
       this.syncLocomotionPose();
-      L.waypoints.push({ x: 0, z: 0, speed: 155, stepSpeed: 14.0 });
+      L.waypoints.push({ x: 0, z: 0, speed: 54 });
       this.applyPerspectiveTransform();
       return;
     }
 
-    if (mode === 'far-run-in') {
-      // Scene 1: Start tiny in the deep background (z = 1.15) and run forward to z = 0 (Mode B dedicated run pose on cat2d)
+    if (mode === 'far-walk-in') {
+      // Scene 1: Start tiny in the deep background (z = 1.15) and walk forward to z = 0
       L.x = 24;
       L.z = 1.15;
       L.moving = true;
-      L.forceModeA = false;
       this.syncLocomotionPose();
       L.waypoints.push(
-        { x: -10, z: 0.45, speed: 135, stepSpeed: 13.5 },
+        { x: -10, z: 0.45, speed: 50 },
         {
           x: 0,
           z: 0,
-          speed: 145,
-          stepSpeed: 14.5,
+          speed: 46,
           onDone: () => this.spawnParticle('✨'),
         }
       );
-      this.say(`從遠方全力衝刺跑來找${this.userTitle}囉～！🏃💨`, 3200);
+      this.say(`從遠方慢慢走過來找${this.userTitle}囉～！🐾`, 3200);
     } else if (mode === 'side-stroll') {
-      // Scene 2: Trot right out of the AuraPet window border (x = +168px), peek back, and run back in!
+      // Scene 2: Stroll right out of the AuraPet window border (x = +168px), look back, and walk home
       L.waypoints.push(
-        { x: 168, z: 0.12, speed: 140, stepSpeed: 13.5, wait: 0.55 },
-        { x: 108, z: 0.06, speed: 95, stepSpeed: 11.0, wait: 0.45 },
+        { x: 168, z: 0.12, speed: 52, wait: 0.7 },
+        { x: 108, z: 0.06, speed: 40, wait: 0.5 },
         {
           x: 0,
           z: 0,
-          speed: 150,
-          stepSpeed: 14.0,
+          speed: 46,
           onDone: () => this.spawnParticle('🐾'),
         }
       );
-      this.say('跑到視窗外面探險一下，馬上又跑回來陪你！🐾✨', 3400);
+      this.say('走到視窗外面散個步，再慢慢走回來陪你！🐾✨', 3400);
     } else if (mode === 'deep-patrol') {
-      // Scene 3: Mode A comparison / deep background patrol: trot from z=0 out to z=1.08, look around, then sprint back!
+      // Scene 3: Deep background patrol: walk out to z=1.08, look around, then amble back
       L.waypoints.push(
-        { x: -26, z: 1.08, speed: 135, stepSpeed: 13.0, wait: 0.85, forceModeA: true },
+        { x: -26, z: 1.08, speed: 54, wait: 0.9 },
         {
           x: 0,
           z: 0,
-          speed: 155,
-          stepSpeed: 14.5,
-          forceModeA: false,
+          speed: 52,
           onDone: () => this.spawnParticle('❤️'),
         }
       );
-      this.say('去遠方深處巡邏一圈，再衝回來找你！🔭🏃', 3500);
+      this.say('去遠方深處巡邏一圈，再慢慢走回來找你！🔭🐾', 3500);
     } else if (mode === 'closeup-sniff') {
-      // Scene 4: Step close up to the screen (z = -0.20, 1.58x scale) to sniff the user, then hop back to z = 0
+      // Scene 4: Walk close up to the screen (z = -0.20, 1.58x scale) to sniff the user, then step back
       L.waypoints.push(
         {
           x: 0,
           z: -0.20,
-          speed: 105,
-          stepSpeed: 11.5,
+          speed: 38,
           wait: 1.25,
           onDone: () => this.spawnParticle('❤️'),
         },
-        { x: 0, z: 0, speed: 120, stepSpeed: 12.5 }
+        { x: 0, z: 0, speed: 42 }
       );
       this.say(`湊近螢幕聞聞${this.userTitle}～ 嗅嗅，是喜歡的味道！👃❤️`, 3400);
     }
@@ -984,13 +1007,13 @@ class PetEngine {
   cyclePerspectiveScene() {
     this.lastInteractionAt = Date.now();
     this.playSound('pop');
-    const scenes = ['far-run-in', 'side-stroll', 'deep-patrol', 'closeup-sniff'];
-    const icons = ['🏃', '🚪', '🔭', '👃'];
+    const scenes = ['far-walk-in', 'side-stroll', 'deep-patrol', 'closeup-sniff'];
+    const icons = ['🚶', '🚪', '🔭', '👃'];
     const titles = [
-      '透視跑動 [1/4]：遠方深處奔跑進場（點擊切換：視窗外散步進出場）',
-      '透視跑動 [2/4]：跑出視窗外再折返（點擊切換：深處巡邏折返）',
-      '透視跑動 [3/4]：跑向遠方深處再衝刺回來（點擊切換：湊近螢幕特寫）',
-      '透視跑動 [4/4]：大步湊近螢幕聞聞你（點擊切換：遠方奔跑進場）',
+      '透視散步 [1/4]：遠方深處慢步進場（點擊切換：視窗外散步）',
+      '透視散步 [2/4]：走到視窗外再折返（點擊切換：深處巡邏折返）',
+      '透視散步 [3/4]：慢步走向遠方深處再走回來（點擊切換：湊近螢幕特寫）',
+      '透視散步 [4/4]：慢慢湊近螢幕聞聞你（點擊切換：遠方慢步進場）',
     ];
     this.loco.sceneIdx = ((this.loco.sceneIdx ?? -1) + 1) % scenes.length;
     const idx = this.loco.sceneIdx;
@@ -1007,35 +1030,32 @@ class PetEngine {
     window.electronAPI.onRoamState((state) => this.setRoamState(state));
   }
 
+  // Only the main process knows whether the window is actually off screen, so it
+  // drives parking the rig loop; an unfocused-but-visible pet must keep moving.
+  setupWindowVisibility() {
+    if (!window.electronAPI || !window.electronAPI.onWindowVisibility) return;
+    window.electronAPI.onWindowVisibility((visible) => {
+      if (!this.rig2d || this.rig2d.disposed) return;
+      if (visible) this.rig2d.wake();
+      else this.rig2d.stop();
+    });
+  }
+
   setRoamState(state) {
-    clearTimeout(this.roamClassTimer);
-    this.roamClassTimer = null;
-    document.body.classList.remove('roam-takeoff', 'roam-air', 'roam-land');
+    const walking = state === 'walk-left' || state === 'walk-right';
+    document.body.classList.toggle('roam-walk', walking);
 
-    if (state === 'takeoff') {
-      document.body.classList.add('roam-takeoff');
-      // 'air' normally arrives on its own; this keeps the crouch from sticking
-      // if the hop is cancelled mid-launch.
-      this.roamClassTimer = setTimeout(() => {
-        if (document.body.classList.contains('roam-takeoff')) {
-          document.body.classList.remove('roam-takeoff');
-          document.body.classList.add('roam-air');
-        }
-      }, 220);
-      return;
-    }
-
-    if (state === 'air') {
-      document.body.classList.add('roam-air');
-      return;
-    }
-
-    if (state === 'land') {
-      document.body.classList.add('roam-land');
-      if (this.rig2d) this.rig2d.react('play');
-      this.roamClassTimer = setTimeout(() => {
-        document.body.classList.remove('roam-land');
-      }, 380);
+    // The window itself carries the pet across the screen, so the rig only needs
+    // to know it is travelling and which way it faces.
+    this.roamWalking = walking;
+    this.loco.flipX = state === 'walk-right' ? -1 : 1;
+    if (this.isRigSkin()) {
+      if (this.loadedRigSkin !== this.skin || this.loadedRigPose !== this.getRigPoseKey()) {
+        this.mountRig(this.skin);
+      } else if (this.rig2d && !this.rig2d.disposed) {
+        this.rig2d.setLocomotion(walking, this.loco.stepSpeed || WALK.rate);
+        this.applyPerspectiveTransform();
+      }
     }
   }
 

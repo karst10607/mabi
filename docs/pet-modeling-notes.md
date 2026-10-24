@@ -1,6 +1,6 @@
 # AuraPet 真實貓咪建模筆記
 
-最後更新：2026-10-23
+最後更新：2026-10-24
 
 這份文件記錄把「條碼貓」做成桌面寵物的兩輪嘗試：先做 3D（已封存為分支目標），
 目前走 Live2D 風格的 2D。內容分成：路線決定、已修正、已發現、尚未決定、可重現指令。
@@ -96,13 +96,14 @@ Live2D 的做法不是把貓切成很多圖層，而是**一張圖 + 可變形�
 | `aBreath` | 胸口高斯（center 520,836、σ 240×180）× 1176→1036 淡出 | 胸腔呼吸；前掌、影子不動 |
 | `aTail` | `rig.tail` 的 x／y smoothstep（480→335、1096→1226） | 尾巴擺動 |
 | `aEarL/R` | 以 `rig.ears` 的 center／sigma（70×95）取高斯 | 耳朵繞 pivot 旋轉 |
+| `aLeg` (vec4) | `rig.legs` 四條腿各自的高斯（center／sigma）× 以 `pivot.y ± 26` 的 smoothstep 掐掉上半身 | 四腳步態：每條腿繞自己的肩／胯樞紐旋轉，只有擺動期抬掌 |
 
 - 上表數值都在 `cat_rig.json`，`make_tex.py` 原封不動寫進 meta 的 `rig`。
   `rig2d.js` 只解釋欄位，**沒有任何貓的常數**；換物種不必改程式。
 - `rig` 座標是去背原圖像素；載入時才減 `origin` 換成貼圖空間，pivot 再翻成 y 向上。
 - `ears` 只接受 0 或 2 個；`tail` 可以是 `null`。鳥、龜目前可把兩者設空，
   共用頭／胸的變形。`bodyPlan` 目前只有 `quadruped` 一種權重模型，
-  翅膀、縮殼、四足步態這類 body-specific 變形還沒做。
+  翅膀、縮殼這類 body-specific 變形還沒做；四足步態已經有，見下方「走路循環」。
 - 外部化後重跑六格測試台，與改前截圖（1169×856）逐像素比對：
   只有 2 個像素差 1/255，肉眼與構圖完全相同。
 - 耳朵是**繞耳根（pivot）旋轉**，不是整體平移。早期用平移會把整個額頭一起拉走。
@@ -215,30 +216,92 @@ hy3d-venv/Scripts/python.exe mab/tools/make_closed.py \
   prompt 裡的「主人」換成稱呼，再補一句 `請以「<稱呼>」稱呼使用者`。
 - 所有 2D rig 角色都會把 `body` 加上 `skin-rig` class，講話泡泡改用小視窗專屬的位置（見 #17）。
 
-### 在螢幕邊緣到處跳（漫遊）
+### 走路循環（四腳慢步）
 
-目前做的是**整個視窗移動**，不是讓貓在視窗內走動；坐姿 rig 沒有走路循環，所以用跳的。
+站姿貼圖才有腿可動，所以走路是**獨立的一組貼圖**（`<prefix>_walk_tex.png` +
+`<prefix>_walk_rig.json`），不是把坐姿變形。
+
+- `rig.legs` 固定 4 條，順序 **FL、FR、BL、BR**；`center`／`sigma` 是腿的重量中心與
+  高斯半徑，`pivot` 是肩／胯樞紐（腿繞它轉）。`tools/landmarks.py` 會把它們疊在
+  去背圖上，烘焙前先用它核坐标。
+- `rig.gait` 覆寫步態，缺省時用 `rig2d.js` 的 `DEFAULT_GAIT`：四拍側步態
+  （lateral sequence），相位 `[0.25, 0.75, 0, 0.5]`，佔空比 68%，也就是任何時刻
+  至少三隻掌踩地，因此身體從不需要離地。
+- 佔空期掌腳相對於身體往後走（等效於地面往後移），擺動期用 smoothstep 把腳
+  送回前方並用半個正弦抬掌 `gait.lift` px。兩段在接合點角度連續，所以不會抖。
+- **`rig2d.js` 裡沒有任何物種常數**；腿的位置、擺幅、抬掌高度全在 rig JSON。
+- 身體保持水平：`pet.js` 的 `applyPerspectiveTransform()` 不再隨步伐升降或擠壓，
+  只有深度 `z` 会影响垂直位置與縮放。
+
+### 沿螢幕邊緣散步（漫遊）
+
+主程序搬的是**整個視窗**；貓在視窗內只負責踏歩與面向。
 
 | 參數 | 值 | 說明 |
 | --- | --- | --- |
-| 間隔 | 6–14 秒 | 每次落地後重新抽 |
-| 目標 | 當下螢幕的 `workArea` | 50% 底部（工作列上緣）、20% 左右、12% 頂部、18% 任意點 |
+| 間隔 | 6–14 秒 | 每次走到位後重新抽 |
+| 目標 | 當下螢幕的 `workArea` | 只換 x，維持在目前那一列（走路不離地） |
 | 位移 | ≥110 px | 太近就 1.5 秒後重抽，避免原地抖 |
-| 時長 | 460–1050 ms | 380 + 距離 × 0.55，夾在上限 |
-| 弧線 | sine 抬升 22–92 px | 水平 smoothstep；每 16 ms 移動，y 夾在工作區內 |
+| 速度 | 78 px/s | `ROAM.speed` 是巡航速度；時長 = 距離／速度，夾在 0.9–24 秒 |
+| 速度曲線 | 梯形 | 前後各 15% 時間加速／減速，中段定速——這才是走的樣子 |
 | 視窗 | 240×290 全部進工作區 | 含底部 dock，因此貼工作列時貓會比邊緣高約 60 px |
 
 - 暫停條件：對話模式、視窗隱藏／最小化、設定面板開啟（`set-ui-busy`）、
   摸摸／餵食／玩之後 5–9 秒、使用者拖曳後 5–9 秒。
-- 跳躍中的 `move` 事件會繞過位置存檔（`roaming` + 最後一跳 150 ms 內），
-  只在落地與關閉時寫 `app-settings.json`，避免每幀寫檔。
-- CSS 只補「跳躍感」：`body.roam-takeoff/air/land` 對 `.pet-graphic` 做
-  蹲低→拉長→落地擠壓，空中把影子淡掉；視窗本身的拋物線由主程序負責。
-- 開關：**預設關閉**；托盤「到處跳 (螢幕邊緣)」與設定 → 系統設定可開啟，存成
+- 行走中的 `move` 事件會繞過位置存檔（`roaming` + 最後一幀 150 ms 內），
+  只在走到位與關閉時寫 `app-settings.json`，避免每幀寫檔。
+- 主程序用 `roam-state` 送 `walk-left`／`walk-right`／`idle`；`pet.js` 據此翻轉面向
+  並讓 rig 進入走路姿態。CSS 只剩 `body.roam-walk` 關掉待機浮動，避免一晃一晃
+  跟腳步打架。
+- 開關：**預設關閉**；托盤「到處走 (螢幕邊緣)」與設定 → 系統設定可開啟，存成
   `app-settings.json` 的 `roamEnabled`；托盤與設定面板會同步。舊版設定檔若已寫入
   `true` 會保留，只有缺欄位的新安裝才是關閉。
-- 限制：只跳**螢幕**工作區邊緣，不跳其他應用程式的視窗邊緣（見第 6 節）；
-  多螢幕時只會在目前所在的螢幕內跳，不會跨螢幕。
+- 限制：只沿**螢幕**工作區水平走，不爬其他應用程式的視窗邊緣（見第 6 節）；
+  多螢幕時只會在目前所在的螢幕內走，不會跨螢幕。
+
+### 影格預算：沒東西在動就少畫、不畫
+
+透明置頂視窗只要 `renderer.render()` 一次，就得請 macOS 重新合成那一塊螢幕，
+所以省 CPU 的重點是**少畫**，不是少算。
+
+| 機制 | 位置 | 說明 |
+| --- | --- | --- |
+| 自我排程的 rAF | `rig2d.js` `schedule()` | rAF 無法跑得比 vsync 慢，因此兩幀之間的空檔用 `setTimeout` 等，等完才交給下一張 animation frame |
+| 快／慢兩檔 | `ACTIVE_FRAME_MS = 30`、`IDLE_FRAME_MS = 110` | 約 30fps 與約 9fps |
+| 忙碌判定 | `rig2d.needsFastFrame()` | 任何還在朝目標緩動的量（`stepAmp`、`pulse`、`nod`、`sleepBlend`、`blink`、耳朵抖動、`autoDrowsy`、`autoGaze`）或 2.4 秒內有滑鼠移動，就要求快檔 |
+| 停擺 | `rig2d.stop()` | 由主程序的 `window-visibility` 觸發，視窗不在螢幕上時一張都不畫 |
+| 位移迴圈 | `pet.js` `locoTick`／`isLocomotionSettled()` | 只有真的在走路時才有 60fps 迴圈；停下來時把 `L.x`／`L.z` 吸附為 0，否則 0.1–0.4 的殘值會讓它永遠自轉 |
+
+兩個踩過的坑：
+
+- **漸近緩動永遠「還沒到位」**：`Math.abs(sleepBlend - target) > 0.004` 這種帶死區的
+  比較是必要的，寫成 `!==` 會讓快檔要求永遠不放手。同理，睏眼原本用「目標 > 0.5」
+  判定，會把整個 1.6–3.4 秒閉眼停留都算成忙碌，改成存下 `drowsyTarget` 再比距離。
+- **高頻抖動不能低頻取樣**：耳朵的 `sin(t*34)` 在 9fps 下會取樣成亂抖，所以它改成
+  自帶 0.42 秒包絡的獨立計時器，并且在抖動期間要求快檔。瞇眼同理：`blinkTimer`
+  還剩不到 0.25 秒時就要先回到快檔，否則第一格會一口氣把眼睛關死。
+
+喚醒路徑（`wake()`）挂在滑鼠移動、`setLocomotion`、`setSleepy`、`react`、`load`、
+`window-visibility`，以及主程序那條 `pet-activity`（只有摸到看得見的貓才會送）。
+`did-finish-load` 則把「隱藏時重新載入」的視窗重新按下去，避免重載後在螢幕外畫圖。
+
+閃爍調查記錄：
+
+- **最可能的元兇**：`THREE.WebGLRenderer` 預設 `preserveDrawingBuffer: false`，畫布交給
+  合成器後其內容即失效。透明置頂視窗每 3.5 秒被 `floatPet` 的 CSS 動畫合成一次，
+  兩次繪製之間的合成就會取到空表面 → 貓閃一下消失。改成 `true` 之後 CPU 沒有變化
+  （GPU helper 11.7–15.2% → 11.8–15.2%），但合成器隨時都拿得到最後一幀。
+- 第二層：`backgroundThrottling: false`。視窗一失去焦點就被當成背景，rAF 全數凍結
+  （實測 4 秒 0 幀、`document.hidden === true`），透明視窗於是留在舊畫面。
+- 負結果：把 `ignore-gpu-blocklist` 在 macOS 關掉測試，WebGL 仍是同一張
+  `ANGLE (Intel Inc., Intel Iris OpenGL Engine, OpenGL 4.1)`，但 GPU helper 從約 13%
+  升到約 20%，所以這個 switch 留著。
+- 渲染端不是元兇：兩段各 90 秒、4Hz 的 `Page.captureScreenshot`（714 幀）沒有任何
+  空白或壞幀。
+- 另外：`mainWindow.on('hide')` 在 macOS 的 frameless 透明視窗上不會觸發，
+  所以顯示狀態一律由 `showPetWindow()`／`hidePetWindow()`／`minimizePetWindow()` 明確送出。
+  本機 `screencapture` 沒有螢幕錄取權限，截到的是純桌布，因此「螢幕上看起來如何」
+  這類證據只能靠使用者目視，無法在此環境取證。
 
 ---
 
@@ -367,17 +430,30 @@ hy3d-venv/Scripts/python.exe mab/tools/make_closed.py \
     驗證：隱藏 UI 與影子，每 200 ms 截 20 張 alpha 圖，前掌底緣全部固定在
     device y=287，胸寬 74→78 px —— 動的是胸腔，不是整隻貓。
 
-19. **漫遊時視窗每跳一次就變大**
+19. **漫遊時視窗每移動一次就變大**
     Windows 上 `BrowserWindow.setPosition()` 在非整數縮放（本機 DPR 1.18）每呼叫
     一次就讓視窗長大一些。最小重現：240×290 的 frameless 視窗連呼 60 次
-    `setPosition`，會從 244×293 變成 334×353。實際漫遊時每跳 +1～2 px，
-    最後貓會越跳越大、視窗底部超出工作區。
-    → 跳躍改用 `setBounds({ x, y, width: 240, height: 290 })` 固定尺寸；建立視窗後
-    也先 `setBounds` 正規化一次。用「當下 bounds」當固定值仍會每跳 +1，必須釘住
-    設計尺寸。驗證：cat2d 連 5 跳都維持 241×291，落地 y=887/888
-    （工作區高 1180、視窗高 291）。
-    另一個坑：跳往上緣時原本會飛出畫面（量到 y=-43），改成把弧線的 y 夾在
-    `workArea` 內。
+    `setPosition`，會從 244×293 變成 334×353。實際漫遊時每步 +1～2 px，
+    最後貓會越走越大、視窗底部超出工作區。
+    → 每一步都改用 `setBounds({ x, y, width: 240, height: 290 })` 固定尺寸；建立視窗後
+    也先 `setBounds` 正規化一次。用「當下 bounds」當固定值仍會每步 +1，必須釘住
+    設計尺寸。驗證：cat2d 走完整段路程都維持 241×291。
+    另一個坑：早期跳躍版會飛出畫面上緣（量到 y=-43）；改成散步後 y 全程釘死，
+    `pickRoamTarget()` 只換 x，x 仍夾在 `workArea` 內。
+
+20. **`pip install` 找不到 wheel 會無訊息改成源碼編譯**
+    `make_closed.py` 需要 `cv2`。在這台 macOS 12.7.6 上裝 `opencv-python-headless`
+    （沒鎖版本）時，pip 抓不到 `macosx_14_0` 標籤的 wheel，**不報錯也不提醒**，
+    直接退回 sdist 用 cmake＋6 個 clang job 源碼建置。i5-4278U 只有 4 核，
+    load average 衝到 180、`/tmp` 被填到剩 126 MB，跑了近一小時還沒結果，
+    而且畫面看起來跟「安裝卡住」一模一樣——完全看不出是在編譯。
+    代價不只時間：建到一半程序被殺會留殘骸（這次清出 840 MB 的 Homebrew
+    `openssl@3` staging、1.4 GB 的臨時 clone 都是這樣累積的）。
+    → 工具鏈依賴一律加 `--only-binary=:all:`，缺 wheel 時讓它立刻失敗而不是默默編譯；
+    版本要鎖死（NumPy 2 需要 opencv ≥ 4.10，實測用 `opencv-python-headless==4.10.0.84`）；
+    不要加 `--quiet`，它會把「正在源碼建置」這個關鍵訊號一起吃掉。
+    疑似卡住時先 `top -l 2` 看第二輪取樣（第一輪是瞬時值，會全報 0.0%），
+    再 `pgrep -fl clang` 確認是不是在編 C++。
 
 ---
 
@@ -416,10 +492,10 @@ hy3d-venv/Scripts/python.exe mab/tools/make_closed.py \
   `~/.config/autostart`、AppImage），但托盤、透明視窗、自動啟動都沒在真機跑過。
 - **托盤「開機自動啟動」沒有實點測過**：原生選單無法用 CDP 點，實作照 Electron
   標準 API 寫，但沒有端到端驗證。
-- **要不要跳其他應用程式的視窗邊緣**：這輪只做螢幕工作區（跨平台、不需特殊權限）。
-  跳視窗上緣要列舉其他 process 的視窗：Windows 用 Win32 `EnumWindows` +
+- **要不要沿其他應用程式的視窗邊緣散步**：這輪只做螢幕工作區（跨平台、不需特殊權限）。
+  走視窗上緣要列舉其他 process 的視窗：Windows 用 Win32 `EnumWindows` +
   `GetWindowRect`，macOS 要 Accessibility 權限（`AXUIElement`），Linux 各 WM 不同；
-  先在 Windows 做一個實驗分支比較合理。托盤「到處跳」之後也要能分辨這兩種模式。
+  先在 Windows 做一個實驗分支比較合理。托盤「到處走」之後也要能分辨這兩種模式。
 
 ---
 

@@ -10,6 +10,9 @@ Rig JSON keys (coordinates in the original matte image):
   head            {fullAboveNeck, zeroBelowNeck}
   breath          {center:[x,y], sigma:[sx,sy], fade:[y0,y1]}
   ears            [{center:[x,y], pivot:[x,y], sigma:[sx,sy]}] (0 or 2)
+  legs            [{center:[x,y], pivot:[x,y], sigma:[sx,sy]}] exactly 4, in
+                  front-left, front-right, back-left, back-right order. `pivot`
+                  is the shoulder/hip joint the leg rotates about.
   tail            {x:[x0,x1], y:[y0,y1]} or null
   eyeRadiusScale  gaze warp radius as a multiple of the iris
 """
@@ -58,6 +61,10 @@ def main():
     missing = [k for k in REQUIRED if k not in rig]
     if missing:
         raise SystemExit("rig JSON is missing: " + ", ".join(missing))
+
+    legs = rig.get("legs", [])
+    if legs and len(legs) != 4:
+        raise SystemExit('"legs" must list exactly 4 legs (FL, FR, BL, BR) or be omitted')
 
     base = Image.open(args.base).convert("RGBA")
     a = np.asarray(base)
@@ -117,6 +124,8 @@ def main():
             "breath": rig["breath"],
             "ears": rig.get("ears", []),
             "paws": rig.get("paws", []),
+            "legs": legs,
+            "gait": rig.get("gait", {}),
             "tail": rig.get("tail"),
             "eyeRadiusScale": rig["eyeRadiusScale"],
         },
