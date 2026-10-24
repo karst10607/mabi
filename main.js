@@ -4,6 +4,10 @@ const fs = require('fs');
 
 app.commandLine.appendSwitch('disable-domain-blocking-for-3d-apis');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
+// `ignore-gpu-blocklist` makes ANGLE re-log a failed EGL device-attribute probe at
+// ERROR severity ~28 times/second on Intel/Haswell. Keep the switch (measured: GPU helper
+// ~13% with it vs ~20% without) and cap the stream it opens instead.
+app.commandLine.appendSwitch('log-level', '3');
 
 // Enable transparent visuals for Linux compatibility
 if (process.platform === 'linux') {
