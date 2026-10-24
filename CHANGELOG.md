@@ -28,6 +28,7 @@
 - 不定時閃爍：`rig2d.js` 的 `WebGLRenderer` 加上 `preserveDrawingBuffer: true`。預設值 `false` 表示畫布交給合成器之後緩衝區就失效，任何兩次繪製之間的合成（`floatPet` 的 CSS 動畫、視窗移動、失去焦點）都可能取到一張空表面，貓就閃一下消失；保留緩衝區後合成器永遠拿得到最後畫好的那一幀。實測成本為零（GPU helper 11.7–15.2% → 11.8–15.2%，同一台機器同一量法）。
 - 不定時閃爍（第二項）：視窗一失去焦點就被 Chromium 當成背景而凍結所有 rAF，透明視窗因此停在最後一張（常常是黑的）畫面，改用 `backgroundThrottling: false`。
 - 閃爍調查的負結果：`ignore-gpu-blocklist` 曾在 macOS 被關掉測試，結果 GPU helper 從約 13% 升到約 20%（WebGL 仍是同一張 `ANGLE (Intel Inc., Intel Iris OpenGL Engine, OpenGL 4.1)`），所以這個 switch 在 Mac 上是有用的，維持不變。渲染端本身也不是元兇：兩段各 90 秒、4Hz 的 `Page.captureScreenshot`（714 幀）沒有任何空白或壞幀。
+- stderr 洪水：`ignore-gpu-blocklist` 會讓 ANGLE 在 Intel/Haswell 上以 **ERROR 等級**每秒約 28 次重記同一條 `eglQueryDeviceAttribEXT: Bad attribute`（舊 log 實測 57 800 行幾乎都是這一句），其實只是探測不支援的 EGL device 屬性，不影響繪製。`main.js` 新增 `app.commandLine.appendSwitch('log-level', '3')` 封住輸出、switch 保留。實測：改前同機 3.6 KB/s（約 13 MB/h），改後 60 秒 stderr **0 bytes**。
 
 ## [1.4.1] - 2026-10-23
 
