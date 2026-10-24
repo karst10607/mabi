@@ -1,16 +1,13 @@
-"""Paint a natural fur-textured closed-eye variant of a skin texture.
+"""Paint a clean, bold closed-eye variant of a skin texture.
 
     python tools/make_closed.py renderer/models/cat2d --name cat
 
 Replaces each open eye with:
-1. Smooth base fur color inpainted from the surrounding eye socket + directional
-   upper/lower lid tone continuity.
-2. Real high-frequency hair/fur grain sampled strictly from pure brow/cheek fur
-   outside the eye socket (with all eye/eyeliner pixels masked out of the grain
-   source so zero open-eye ghosting can ever occur).
-3. Subtle 3D convex upper-lid shading + soft upper fold shadow + a tapered,
-   Gaussian-feathered dark warm-brown lash crease that narrows smoothly at both
-   canthi (no hard drawn polyline).
+1. Smooth surrounding fur color via Telea inpainting + Gaussian feathering,
+   swallowing dark outer eyeliner pixels so no black smudges bleed into the socket.
+2. A full-width, bold dark curved closed-eye line (`[-1.75*rx, +1.75*rx]`,
+   `thickness=3` across the main span with soft tip tapering at the outer 15%)
+   that reads clearly even at small desktop-pet window scales.
 """
 import argparse
 import json
@@ -51,14 +48,12 @@ def main():
     eye_angle_deg = math.degrees(eye_angle_rad)
     cos_a, sin_a = math.cos(eye_angle_rad), math.sin(eye_angle_rad)
 
-    # True green/yellow-green iris marker (strict enough not to match golden tabby fur)
     b, g, r = bgr[..., 0].astype(int), bgr[..., 1].astype(int), bgr[..., 2].astype(int)
-    green = (((g > 95) & (g > r + 10) & (g > b + 28)) & (alpha > 40)).astype(np.uint8)
+    green = (((g > 90) & (g > r + 15) & (g > b + 18)) & (alpha > 40)).astype(np.uint8)
     _, lab = cv2.connectedComponents(green)
-    kern = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (19, 19))
+    kern = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 25))
 
     eye_masks = []
-    all_eyes_union = np.zeros((h, w), np.uint8)
     for e in meta["eyes"]:
         cx, cy = e["cx"] - ox, e["cy"] - oy
         rx, ry = float(e["rx"]), float(e["ry"])
@@ -66,147 +61,93 @@ def main():
         cv2.ellipse(
             m,
             (int(round(cx)), int(round(cy))),
-            (int(round(rx * 2.85)), int(round(ry * 2.80))),
+            (int(round(rx * 2.55)), int(round(ry * 2.55))),
             eye_angle_deg,
             0,
             360,
             1,
             -1,
         )
-        y_lo, y_hi = max(0, int(cy) - 18), min(h, int(cy) + 19)
-        x_lo, x_hi = max(0, int(cx) - 22), min(w, int(cx) + 23)
+        y_lo, y_hi = max(0, int(cy) - 20), min(h, int(cy) + 21)
+        x_lo, x_hi = max(0, int(cx) - 25), min(w, int(cx) + 26)
         win = lab[y_lo:y_hi, x_lo:x_hi]
         ids, counts = np.unique(win[win > 0], return_counts=True)
         if len(ids):
             lid = ids[np.argmax(counts)]
             comp = (lab == lid).astype(np.uint8)
             local_box = np.zeros((h, w), np.uint8)
-            cv2.circle(local_box, (int(round(cx)), int(round(cy))), int(round(max(rx, ry) * 1.9)), 1, -1)
+            cv2.circle(local_box, (int(round(cx)), int(round(cy))), int(round(max(rx, ry) * 1.85)), 1, -1)
             m |= cv2.dilate(comp & local_box, kern)
+
+        # Swallow dark eyeliner pixels right on the border of m so inpaint doesn't smear dark wedges
+        border_ring = cv2.dilate(m, np.ones((7, 7), np.uint8)) - m
+        luma = 0.114 * b + 0.587 * g + 0.299 * r
+        ring_vals = luma[(border_ring > 0) & (alpha > 150)]
+        if len(ring_vals):
+            dark_thresh = np.percentile(ring_vals, 25)
+            dark_border = (border_ring > 0) & (luma < min(85, dark_thresh + 10))
+            m[dark_border] = 1
+            m = cv2.dilate(m, np.ones((3, 3), np.uint8))
+
         eye_masks.append((cx, cy, rx, ry, m))
-        all_eyes_union |= m
         print("eye mask px:", int(m.sum()))
 
-    # Extract high-frequency fur texture from the original image, strictly
-    # zeroing out any pixel inside or near the eye masks so no eyeball/eyeliner
-    # edge can ever be copied into the closed eyelid.
-    orig_f = orig_bgr.astype(np.float32)
-    orig_low = cv2.GaussianBlur(orig_f, (0, 0), 2.8)
-    fur_grain = np.clip(orig_f - orig_low, -22.0, 22.0)
-    no_grain_zone = cv2.dilate(all_eyes_union, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))) > 0
-    fur_grain[no_grain_zone] = 0.0
+    def rot_pt(dx, dy, cx0, cy0):
+        return (cx0 + dx * cos_a - dy * sin_a, cy0 + dx * sin_a + dy * cos_a)
 
-    # Fill transparent background pixels with the local fur median before inpainting
-    opaque_fur = orig_bgr[(alpha > 180) & (~no_grain_zone)]
+    opaque_fur = orig_bgr[alpha > 180]
     fallback_col = (
         np.median(opaque_fur, axis=0).astype(np.uint8)
         if len(opaque_fur)
         else np.array([105, 152, 192], dtype=np.uint8)
     )
-
     bgr_for_inpaint = bgr.copy()
     outside = alpha < 60
     if outside.any():
         bgr_for_inpaint[outside] = fallback_col
 
-    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
-
     for cx, cy, rx, ry, mask in eye_masks:
-        # 1. Smooth base color inpaint (large radius + heavy Gaussian smoothing inside socket
-        # so dark corner eyeliner doesn't leave dark puddles inside the lid)
-        inpainted = cv2.inpaint(bgr_for_inpaint, mask * 255, 10, cv2.INPAINT_NS)
-        inpainted_smooth = cv2.GaussianBlur(inpainted.astype(np.float32), (0, 0), 4.5)
-
-        # Blend toward the warm median fur color right around the upper/lower socket
-        dx = xx - cx
-        dy = yy - cy
-        u = (dx * cos_a + dy * sin_a) / max(rx, 1.0)
-        v = (-dx * sin_a + dy * cos_a) / max(ry, 1.0)
-
-        # Sample clean brow fur color above the eye and cheek fur color below the eye
-        brow_ring = (np.abs(u) < 1.6) & (v > -3.6) & (v < -2.7) & (alpha > 160) & (~no_grain_zone)
-        cheek_ring = (np.abs(u) < 1.6) & (v > 2.7) & (v < 3.6) & (alpha > 160) & (~no_grain_zone)
-        if brow_ring.any() and cheek_ring.any():
-            brow_col = np.median(orig_bgr[brow_ring], axis=0).astype(np.float32)
-            cheek_col = np.median(orig_bgr[cheek_ring], axis=0).astype(np.float32)
-            t_vert = np.clip((v + 2.2) / 4.4, 0.0, 1.0)[..., None]
-            vert_grad = brow_col * (1.0 - t_vert) + cheek_col * t_vert
-            core_w = np.exp(-0.5 * ((u / 1.9) ** 2 + (v / 1.8) ** 2))[..., None] * 0.45
-            inpainted_smooth = inpainted_smooth * (1.0 - core_w) + vert_grad * core_w
-
-        # Feather the socket mask edge so there is zero seam
-        mask_f = cv2.GaussianBlur(mask.astype(np.float32), (0, 0), 2.6) * (alpha > 20).astype(np.float32)
-        mask_f3 = mask_f[..., None]
-
-        # Gently curved resting eyelid crease (slightly lower in the middle, uplifted at corners)
-        v_crease = 0.22 - 0.14 * (u ** 2)
-
-        # 2. Graft real high-frequency fur grain from outside the eye socket using
-        # smooth bilinear remapping so hair strokes are crisp and never blocky.
-        u_src = np.clip(u * 0.82, -1.65, 1.65)
-        v_src = np.where(
-            v <= v_crease,
-            -3.15 + (v - v_crease) * 0.65,
-            +3.05 + (v - v_crease) * 0.65,
-        )
-        map_x = np.clip(cx + (u_src * rx) * cos_a - (v_src * ry) * sin_a, 0, w - 1).astype(np.float32)
-        map_y = np.clip(cy + (u_src * rx) * sin_a + (v_src * ry) * cos_a, 0, h - 1).astype(np.float32)
-        sampled_grain = cv2.remap(fur_grain, map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
-        sampled_alpha = cv2.remap(alpha.astype(np.float32), map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
-        valid_src = (sampled_alpha > 150).astype(np.float32)[..., None]
-        coat_scale = np.clip(inpainted_smooth / 95.0, 0.35, 1.05)
-        sampled_grain = sampled_grain * valid_src * coat_scale
-
-        lid_tex = np.clip(inpainted_smooth + sampled_grain, 0, 255)
-
-        # 3. 3D upper-eyelid dome shading: slightly fuller/warmer on the upper lid dome,
-        # soft crease shadow along the top socket fold
-        dome = np.exp(-((u / 1.25) ** 2 + ((v + 0.25) / 0.80) ** 2))
-        upper_fold = np.exp(-(((v + 1.15 + 0.12 * (u ** 2)) / 0.35) ** 2)) * np.exp(-((u / 1.45) ** 2))
-        lid_tex = lid_tex * (1.0 + 0.05 * dome[..., None] - 0.09 * upper_fold[..., None])
-
-        cur_f = bgr.astype(np.float32) * (1.0 - mask_f3) + lid_tex * mask_f3
-
-        # 4. Natural tapered eyelid slit (soft feathered lash line + subtle lower-lid rim highlight)
-        span = np.clip(1.0 - (u / 1.62) ** 2, 0.0, 1.0)
-        taper = span ** 1.35  # smooth point at both inner and outer corners
-
-        dist_c = v - v_crease
-        sigma = 0.12 + 0.05 * span
-        crease_w = np.exp(-0.5 * (dist_c / sigma) ** 2) * taper * (alpha > 45).astype(np.float32)
-        crease_w = np.clip(crease_w * 0.88, 0.0, 0.90)[..., None]
-
-        # Upper lash/fur fringe softening right above the slit
-        lash_fringe = (
-            np.exp(-0.5 * ((dist_c + 0.14) / 0.17) ** 2)
-            * (span ** 1.6)
-            * 0.24
-            * (alpha > 45).astype(np.float32)
-        )[..., None]
-
-        # Subtle lower-lid rim highlight just below the slit so the two lids look met, not drawn
-        lower_rim = (
-            np.exp(-0.5 * ((dist_c - 0.17) / 0.14) ** 2)
-            * (span ** 1.5)
-            * 0.13
-            * (alpha > 45).astype(np.float32)
-        )[..., None]
-
-        ring_mask = (u ** 2 + v ** 2 > 7.5) & (u ** 2 + v ** 2 < 14.0) & (alpha > 150) & (~no_grain_zone)
-        if ring_mask.any():
-            lid_col = np.median(orig_bgr[ring_mask], axis=0).astype(np.float32)
-        else:
-            lid_col = np.array([90.0, 120.0, 150.0], np.float32)
-        crease_col = np.clip(lid_col * 0.22 + np.array([6.0, 9.0, 14.0], np.float32), 8.0, 44.0)
-
-        cur_f = cur_f * (1.0 - lash_fringe) + (crease_col * 1.25) * lash_fringe
-        cur_f = np.clip(cur_f + lower_rim * np.array([12.0, 15.0, 19.0], np.float32), 0, 255)
-        cur_f = cur_f * (1.0 - crease_w) + crease_col * crease_w
-
-        bgr = np.clip(cur_f, 0, 255).astype(np.uint8)
+        inpainted = cv2.inpaint(bgr_for_inpaint, mask * 255, 6, cv2.INPAINT_TELEA)
+        inpainted_smooth = cv2.GaussianBlur(inpainted.astype(np.float32), (0, 0), 2.0)
+        mask_f = cv2.GaussianBlur(mask.astype(np.float32), (0, 0), 2.5) * (alpha > 15).astype(np.float32)
+        bgr = np.clip(
+            bgr.astype(np.float32) * (1.0 - mask_f[..., None]) + inpainted_smooth * mask_f[..., None],
+            0,
+            255,
+        ).astype(np.uint8)
         bgr_for_inpaint = bgr.copy()
         if outside.any():
             bgr_for_inpaint[outside] = fallback_col
+
+        # Full-width bold curved lid line spanning [-1.75*rx, +1.75*rx],
+        # keeping full 3px thickness across 80% of the eye and tapering only at the outer tips
+        p0 = rot_pt(-rx * 1.75, 0.5, cx, cy)
+        p2 = rot_pt(+rx * 1.75, 0.5, cx, cy)
+        p1 = rot_pt(0.0, ry * 0.52, cx, cy)
+        pts = []
+        for i in range(49):
+            t = i / 48.0
+            x = (1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * p1[0] + t * t * p2[0]
+            y = (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * p1[1] + t * t * p2[1]
+            pts.append((x, y))
+
+        line = np.zeros((h, w), np.float32)
+        for i in range(len(pts) - 1):
+            t_mid = (i + 0.5) / (len(pts) - 1)
+            d_end = abs(t_mid - 0.5) * 2.0
+            seg_thick = 3 if d_end < 0.78 else (2 if d_end < 0.90 else 1)
+            seg_val = 255.0 if d_end < 0.82 else 255.0 * (1.0 - (d_end - 0.82) / 0.20)
+            seg_canvas = np.zeros((h, w), np.uint8)
+            pt_a = (int(round(pts[i][0])), int(round(pts[i][1])))
+            pt_b = (int(round(pts[i + 1][0])), int(round(pts[i + 1][1])))
+            cv2.line(seg_canvas, pt_a, pt_b, int(round(max(0, seg_val))), seg_thick, cv2.LINE_AA)
+            line = np.maximum(line, seg_canvas.astype(np.float32))
+
+        line = cv2.GaussianBlur(line, (0, 0), 0.8) / 255.0
+        line = np.clip(line * 1.38, 0, 1) * (alpha > 40).astype(np.float32)
+        line = line[..., None]
+        lid_color = np.array([14, 20, 30], np.float32)
+        bgr = (bgr.astype(np.float32) * (1 - line) + lid_color * line).astype(np.uint8)
 
     out = np.dstack([bgr, alpha])
     cv2.imwrite(str(out_path), out)
