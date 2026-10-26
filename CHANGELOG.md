@@ -2,6 +2,12 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.5.2] - 2026-10-26
+
+### Fixed
+
+- **Linux 版異常吃 CPU（GPU 進程 342% → 19%）**：`main.js` 的 Linux 分支從 initial commit 起就呼叫 `app.disableHardwareAcceleration()` 作為透明視窗的相容性防衛，但這讓 `rig2d.js` 的 `THREE.WebGLRenderer` 整條管線退到 SwiftShader 軟體渲染（啟動參數變成 `--use-gl=angle --use-angle=swiftshader-webgl`），所有 WebGL 繪製由 CPU 分攤，且每幀伴隨 `GPU stall due to ReadPixels`。修法為移除該行、保留 `enable-transparent-visuals`。實測（Vega 8 / Linux Mint，5 秒 /proc 採樣）：改前 GPU 進程 342%、renderer 6.8%、main 0.2%；改後 GPU 進程 1%（閒置）～19%（行走動畫）、renderer 8%、main ~0%，透明背景與置頂行為正常，stderr 無任何 WebGL 錯誤。Windows/macOS 走不到這個分支，不受影響。
+
 ## [1.5.0] - 2026-10-24
 
 ### Changed

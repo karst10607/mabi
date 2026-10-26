@@ -12,7 +12,9 @@ app.commandLine.appendSwitch('log-level', '3');
 // Enable transparent visuals for Linux compatibility
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('enable-transparent-visuals');
-  app.disableHardwareAcceleration();
+  // CPU 實測：disableHardwareAcceleration() 讓 THREE.WebGLRenderer 落到
+  // SwiftShader 軟體渲染，GPU 進程吃掉 ~340% CPU。Vega 8 直接跑 OpenGL 即可。
+  // app.disableHardwareAcceleration();
 }
 
 let mainWindow = null;
