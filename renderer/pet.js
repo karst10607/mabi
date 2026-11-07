@@ -58,6 +58,10 @@ const KNOWN_SKINS = ['cat2d', 'ami2d', 'kk2d', 'kitsune', 'shiba', 'cat', 'slime
 // ground per second while the body stays level.
 const WALK = { speed: 46, rate: 4.2 };
 
+// Pure state rules live in daemon/pet-state.js so the headless daemon can own
+// them later; this file keeps rendering and persistence.
+const PetState = window.AuraDaemon.PetState;
+
 class PetEngine {
   constructor() {
     this.container = document.getElementById('pet-graphic');
@@ -79,11 +83,11 @@ class PetEngine {
     this.soundEnabled = localStorage.getItem('aurapet_sound') !== 'false';
     this.autoSpeech = localStorage.getItem('aurapet_speech') !== 'false';
     
-    this.affection = parseInt(localStorage.getItem('aurapet_affection') || '88', 10);
-    this.energy = parseInt(localStorage.getItem('aurapet_energy') || '95', 10);
+    this.affection = PetState.parseStat(localStorage.getItem('aurapet_affection'), PetState.DEFAULT_AFFECTION);
+    this.energy = PetState.parseStat(localStorage.getItem('aurapet_energy'), PetState.DEFAULT_ENERGY);
     this.state = 'idle'; // idle, blink, happy, eating, thinking, sleepy
     const savedPosture = localStorage.getItem('aurapet_posture');
-    this.posture = ['sit', 'doze', 'rest', 'sleep'].includes(savedPosture) ? savedPosture : 'sit';
+    this.posture = PetState.normalizePosture(savedPosture, PetState.BASE_POSTURES);
     this.loadedRigPose = null;
     this.lastInteractionAt = Date.now();
     
@@ -538,11 +542,11 @@ class PetEngine {
   }
 
   isRestPose(posture = this.posture) {
-    return posture === 'rest' || posture === 'sleep';
+    return PetState.isRestPose(posture);
   }
 
   isSleepyPosture(posture = this.posture) {
-    return posture === 'doze' || posture === 'sleep';
+    return PetState.isSleepyPosture(posture);
   }
 
   getSupportedPostures(skinId = this.skin) {
@@ -609,7 +613,7 @@ class PetEngine {
 
   setPosture(newPosture, opts = {}) {
     const supported = this.getSupportedPostures();
-    if (!supported.includes(newPosture)) newPosture = 'sit';
+    newPosture = PetState.normalizePosture(newPosture, supported);
     const nextPose = this.getRigPoseKey(newPosture);
     const isSleepy = this.isSleepyPosture(newPosture);
     const needsTextureSwap =
@@ -650,8 +654,7 @@ class PetEngine {
   cyclePosture() {
     this.lastInteractionAt = Date.now();
     const order = this.getSupportedPostures();
-    const idx = order.indexOf(this.posture);
-    const next = order[(idx + 1) % order.length];
+    const next = PetState.nextPosture(order, this.posture);
     this.playSound('pop');
     if (next === 'doze' || next === 'sleep') {
       this.spawnParticle('💤');
@@ -674,10 +677,9 @@ class PetEngine {
       } else {
         // Auto-transition to doze/sleep after long idle
         const idleMs = Date.now() - (this.lastInteractionAt || Date.now());
-        if (this.posture === 'sit' && idleMs > 180000) {
-          this.setPosture('doze', { silent: true });
-        } else if (this.posture === 'rest' && idleMs > 180000) {
-          this.setPosture('sleep', { silent: true });
+        const next = PetState.postureAfterIdle(this.posture, idleMs);
+        if (next !== this.posture) {
+          this.setPosture(next, { silent: true });
         }
       }
     }, 3800);
@@ -1062,8 +1064,8 @@ class PetEngine {
   // Pat the pet
   pat(clickX, clickY) {
     this.lastInteractionAt = Date.now();
-    if (this.posture === 'doze') this.setPosture('sit', { silent: true });
-    else if (this.posture === 'sleep') this.setPosture('rest', { silent: true });
+    const nextPosture = PetState.postureAfterPat(this.posture);
+    if (nextPosture !== this.posture) this.setPosture(nextPosture, { silent: true });
     this.playSound('pat');
     if (window.electronAPI && window.electronAPI.notifyPetActivity) {
       window.electronAPI.notifyPetActivity();
@@ -1093,8 +1095,8 @@ class PetEngine {
   // Feed the pet
   feed() {
     this.lastInteractionAt = Date.now();
-    if (this.posture === 'doze') this.setPosture('sit', { silent: true });
-    else if (this.posture === 'sleep') this.setPosture('rest', { silent: true });
+    const nextPosture = PetState.postureAfterFeed(this.posture);
+    if (nextPosture !== this.posture) this.setPosture(nextPosture, { silent: true });
     this.playSound('feed');
     if (window.electronAPI && window.electronAPI.notifyPetActivity) {
       window.electronAPI.notifyPetActivity();
@@ -1112,7 +1114,8 @@ class PetEngine {
   // Play with pet
   play() {
     this.lastInteractionAt = Date.now();
-    if (this.posture !== 'sit') this.setPosture('sit', { silent: true });
+    const nextPosture = PetState.postureAfterPlay(this.posture);
+    if (nextPosture !== this.posture) this.setPosture(nextPosture, { silent: true });
     this.playSound('pop');
     if (window.electronAPI && window.electronAPI.notifyPetActivity) {
       window.electronAPI.notifyPetActivity();
@@ -1128,17 +1131,17 @@ class PetEngine {
   }
 
   increaseAffection(pts) {
-    this.affection = Math.min(100, this.affection + pts);
+    this.affection = PetState.addAffection(this.affection, pts);
     this.updateStatsDisplay();
   }
 
   increaseEnergy(pts) {
-    this.energy = Math.min(100, this.energy + pts);
+    this.energy = PetState.addEnergy(this.energy, pts);
     this.updateStatsDisplay();
   }
 
   decreaseEnergy(pts) {
-    this.energy = Math.max(10, this.energy - pts);
+    this.energy = PetState.spendEnergy(this.energy, pts);
     this.updateStatsDisplay();
   }
 
