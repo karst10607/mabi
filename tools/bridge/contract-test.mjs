@@ -351,12 +351,31 @@ check('docs section 5 matches schema legacy channels', () => {
   return '14 channels';
 });
 
-check('legacy channel targets exist and match preload channels', () => {
+check('legacy channel targets exist and are handled by the preload shim', () => {
   for (const [legacyName, targets] of Object.entries(schema.legacyChannels)) {
     assert(targets.length > 0, `${legacyName} has no target`);
-    for (const target of targets) assert(schema.messages[target], `${legacyName} -> undeclared ${target}`);
-    assert(preload.includes(`'${legacyName}'`), `${legacyName} not found in preload.js`);
+    for (const target of targets) {
+      assert(schema.messages[target], `${legacyName} -> undeclared ${target}`);
+      // Since the WS migration the shim speaks protocol types, not IPC channel
+      // names, so every mapped target must appear in preload.js.
+      assert(preload.includes(`'${target}'`), `${target} (from ${legacyName}) not handled in preload.js`);
+    }
   }
+});
+
+check('preload keeps the renderer electronAPI surface', () => {
+  const required = [
+    'switchMode',
+    'setAlwaysOnTop',
+    'minimizeApp',
+    'closeApp',
+    'setIgnoreMouseEvents',
+    'setUiBusy',
+    'notifyPetActivity',
+    'getRoamEnabled',
+    'setRoamEnabled'
+  ];
+  for (const name of required) assert(preload.includes(name), `${name} missing from preload.js`);
 });
 
 check('docs status is CANDIDATE and points to machine-readable contract', () => {

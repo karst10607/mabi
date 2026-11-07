@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, globalShortcut, screen, Tray, Menu, nativeI
 const path = require('path');
 const fs = require('fs');
 const { createConfigStore } = require('./daemon/config-store');
+const { createBridgeServer } = require('./daemon/bridge-server');
 
 app.commandLine.appendSwitch('disable-domain-blocking-for-3d-apis');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
@@ -20,7 +21,6 @@ if (process.platform === 'linux') {
 
 let mainWindow = null;
 let tray = null;
-let trayMenu = null;
 let currentMode = 'pet'; // 'pet' or 'chat'
 
 // Window dimensions for each mode
@@ -29,12 +29,11 @@ const WINDOW_SIZES = {
   chat: { width: 460, height: 680 }
 };
 
-// Screen-edge roaming. The pet walks along its current row of the work area;
-// `speed` is px/s and stays slow enough that the four-legged gait reads as a
+// Screen-edge roaming execution. The brain (daemon) decides *when* to walk; the
+// body keeps the motion itself: the pet walks along its current row of the work
+// area, and `speed` is px/s, slow enough that the four-legged gait reads as a
 // stroll rather than a dash.
 const ROAM = {
-  minDelay: 6000,
-  maxDelay: 14000,
   minDistance: 110,
   speed: 78,
   // The walk is time-based, so a 30 Hz window move matches the 30 fps gait and
@@ -42,12 +41,11 @@ const ROAM = {
   tickMs: 33
 };
 
-let roamEnabled = false;
-let roamTimer = null;
 let walkTimer = null;
 let roaming = false;
-let uiBusy = false;
 let lastWalkFrameAt = 0;
+let clickThrough = false;
+let bridge = null;
 
 const configStore = createConfigStore({ dir: app.getPath('userData') });
 
@@ -175,11 +173,30 @@ function recoverRenderer(reason) {
 
 const randomBetween = (min, max) => min + Math.random() * (max - min);
 
-function clearRoamTimer() {
-  if (roamTimer) {
-    clearTimeout(roamTimer);
-    roamTimer = null;
-  }
+function windowIsVisible() {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  // Electron treats a minimized window as visible; the pet is off screen, so
+  // report it as hidden to park the rig loop.
+  return mainWindow.isVisible() && !mainWindow.isMinimized();
+}
+
+function reportWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const [x, y] = mainWindow.getPosition();
+  mainWindow.webContents.send('bridge-window-state', {
+    alwaysOnTop: mainWindow.isAlwaysOnTop(),
+    clickThrough,
+    visible: windowIsVisible(),
+    x,
+    y,
+    mode: currentMode
+  });
+}
+
+function sendRoamState(state) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const [x, y] = mainWindow.getPosition();
+  mainWindow.webContents.send('bridge-roam-state', { state, x, y });
 }
 
 function stopWalk() {
@@ -189,66 +206,101 @@ function stopWalk() {
   }
   if (!roaming) return;
   roaming = false;
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('roam-state', 'idle');
-  }
-}
-
-function scheduleRoam(delay = randomBetween(ROAM.minDelay, ROAM.maxDelay)) {
-  clearRoamTimer();
-  if (!roamEnabled || uiBusy || currentMode !== 'pet') return;
-  if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
-  roamTimer = setTimeout(() => {
-    roamTimer = null;
-    roamWalk();
-  }, delay);
+  sendRoamState('idle');
 }
 
 // A renderer cannot tell a hidden window from a merely unfocused one, and macOS
 // fires no 'hide'/'show' event for this frameless transparent window, so the code
 // that actually moves the window in and out is what tells the pet to park or wake.
-function sendVisibility(visible) {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('window-visibility', visible);
-  }
+function reportWindowStateSoon() {
+  setTimeout(reportWindowState, 50);
 }
 
 function showPetWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
-  sendVisibility(true);
-  scheduleRoam(2000);
+  reportWindowStateSoon();
 }
 
 function hidePetWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  clearRoamTimer();
   stopWalk();
   mainWindow.hide();
-  sendVisibility(false);
+  reportWindowStateSoon();
 }
 
 function minimizePetWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  clearRoamTimer();
   stopWalk();
   mainWindow.minimize();
-  sendVisibility(false);
+  reportWindowStateSoon();
 }
 
-function setRoamEnabled(enabled) {
-  roamEnabled = !!enabled;
-  writeAppSettings({ roamEnabled });
-  if (trayMenu) {
-    const item = trayMenu.getMenuItemById('roam-toggle');
-    if (item) item.checked = roamEnabled;
+function applyAlwaysOnTop(flag) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (process.platform === 'darwin') {
+    mainWindow.setAlwaysOnTop(flag, 'floating', 1);
+  } else {
+    mainWindow.setAlwaysOnTop(flag);
   }
-  if (!roamEnabled) {
-    // Stop any walk that is still scheduled; one already in progress finishes.
-    clearRoamTimer();
+}
+
+// Window geometry/anchor rules from v1.5.2, driven by mode.set instead of IPC.
+function setWindowMode(mode) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  currentMode = mode;
+  const targetSize = WINDOW_SIZES[mode] || WINDOW_SIZES.pet;
+  const [curX, curY] = mainWindow.getPosition();
+  const [curW, curH] = mainWindow.getSize();
+
+  // Anchor bottom-right position when expanding to chat mode
+  let newX = curX - (targetSize.width - curW);
+  let newY = curY - (targetSize.height - curH);
+
+  // Keep within screen bounds
+  const display = screen.getDisplayNearestPoint({ x: curX, y: curY });
+  const { x: boundX, y: boundY, width: boundW, height: boundH } = display.workArea;
+
+  if (newX < boundX + 10) newX = boundX + 10;
+  if (newX + targetSize.width > boundX + boundW - 10) newX = boundX + boundW - targetSize.width - 10;
+  if (newY < boundY + 10) newY = boundY + 10;
+  if (newY + targetSize.height > boundY + boundH - 10) newY = boundY + boundH - targetSize.height - 10;
+
+  mainWindow.setBounds({
+    x: Math.round(newX),
+    y: Math.round(newY),
+    width: targetSize.width,
+    height: targetSize.height
+  });
+}
+
+function applyWindowPatch(patch = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (patch.mode === 'pet' || patch.mode === 'chat') setWindowMode(patch.mode);
+  if (typeof patch.alwaysOnTop === 'boolean') applyAlwaysOnTop(patch.alwaysOnTop);
+  if (typeof patch.clickThrough === 'boolean') {
+    clickThrough = patch.clickThrough;
+    mainWindow.setIgnoreMouseEvents(clickThrough, { forward: Boolean(patch.forward) });
+  }
+  if (typeof patch.visible === 'boolean') {
+    if (patch.visible) showPetWindow();
+    else hidePetWindow();
+  }
+  reportWindowState();
+}
+
+function executeRoam(command = {}) {
+  if (command.action === 'stop' || command.action === 'park') {
+    stopWalk();
     return;
   }
-  scheduleRoam(1800);
+  if (command.action !== 'start') return;
+  if (roaming || !windowIsVisible()) {
+    sendRoamState('idle');
+    return;
+  }
+  roamWalk();
 }
 
 function pickRoamTarget() {
@@ -267,12 +319,14 @@ function pickRoamTarget() {
 }
 
 function roamWalk() {
-  if (!roamEnabled || uiBusy || currentMode !== 'pet' || roaming) return;
-  if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
+  if (roaming || !windowIsVisible()) {
+    sendRoamState('idle');
+    return;
+  }
 
   const target = pickRoamTarget();
   if (!target) {
-    scheduleRoam(1500);
+    sendRoamState('idle');
     return;
   }
 
@@ -292,7 +346,7 @@ function roamWalk() {
   const startedAt = Date.now();
 
   roaming = true;
-  mainWindow.webContents.send('roam-state', dx > 0 ? 'walk-right' : 'walk-left');
+  sendRoamState(dx > 0 ? 'walk-right' : 'walk-left');
 
   walkTimer = setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) {
@@ -312,7 +366,6 @@ function roamWalk() {
     if (!Number.isFinite(x)) {
       logCrash(`bad walk frame x=${x} target=${JSON.stringify(target)} start=${startX},${startY} d=${dx} dur=${duration} t=${t}`);
       stopWalk();
-      scheduleRoam();
       return;
     }
     lastWalkFrameAt = Date.now();
@@ -324,9 +377,8 @@ function roamWalk() {
       clearInterval(walkTimer);
       walkTimer = null;
       roaming = false;
-      mainWindow.webContents.send('roam-state', 'idle');
+      sendRoamState('idle');
       savePetPosition();
-      scheduleRoam();
     }
   }, ROAM.tickMs);
 }
@@ -400,7 +452,6 @@ function createMainWindow() {
   }
 
   mainWindow.on('closed', () => {
-    clearRoamTimer();
     stopWalk();
     mainWindow = null;
   });
@@ -411,24 +462,26 @@ function createMainWindow() {
     // The final setPosition's 'move' can arrive just after landing, so also
     // ignore anything right after the last hop frame.
     if (roaming || Date.now() - lastWalkFrameAt < 150) return;
-    clearRoamTimer();
-    if (currentMode === 'pet') scheduleRoam(randomBetween(5000, 9000));
     if (currentMode !== 'pet') return;
     clearTimeout(savePosTimer);
-    savePosTimer = setTimeout(savePetPosition, 500);
+    savePosTimer = setTimeout(() => {
+      savePetPosition();
+      reportWindowState();
+    }, 500);
   };
   // 'move' fires during a drag (and for programmatic moves); 'moved' is not
   // emitted for native moves that never send WM_EXITSIZEMOVE.
   mainWindow.on('move', scheduleSavePosition);
   mainWindow.on('moved', scheduleSavePosition);
+  // WM state changes are asynchronous; report after the window manager settles.
+  for (const event of ['minimize', 'restore', 'show', 'hide']) {
+    mainWindow.on(event, reportWindowStateSoon);
+  }
 
   mainWindow.webContents.on('did-finish-load', () => {
-    // A renderer reload may have left the settings modal state behind.
-    uiBusy = false;
-    // A freshly loaded renderer starts its animation loop; a hidden window must
-    // be told to park it again instead of drawing off screen.
-    sendVisibility(mainWindow.isVisible());
-    scheduleRoam(9000);
+    // A freshly loaded renderer starts its animation loop; report the real
+    // window state so it parks when hidden and the brain can resume roaming.
+    reportWindowState();
   });
 
   mainWindow.webContents.on('render-process-gone', (event, details) => {
@@ -439,87 +492,27 @@ function createMainWindow() {
   mainWindow.on('unresponsive', () => recoverRenderer('unresponsive'));
 }
 
-function registerIpcHandlers() {
-  // Handle mode switches and window resizing smoothly
-  ipcMain.on('switch-mode', (event, mode) => {
-    if (!mainWindow) return;
-    currentMode = mode;
-    if (mode === 'pet') {
-      scheduleRoam(2500);
-    } else {
-      clearRoamTimer();
-      stopWalk();
-    }
-    const targetSize = WINDOW_SIZES[mode] || WINDOW_SIZES.pet;
-    const [curX, curY] = mainWindow.getPosition();
-    const [curW, curH] = mainWindow.getSize();
-
-    // Anchor bottom-right position when expanding to chat mode
-    let newX = curX - (targetSize.width - curW);
-    let newY = curY - (targetSize.height - curH);
-
-    // Keep within screen bounds
-    const display = screen.getDisplayNearestPoint({ x: curX, y: curY });
-    const { x: boundX, y: boundY, width: boundW, height: boundH } = display.workArea;
-
-    if (newX < boundX + 10) newX = boundX + 10;
-    if (newX + targetSize.width > boundX + boundW - 10) newX = boundX + boundW - targetSize.width - 10;
-    if (newY < boundY + 10) newY = boundY + 10;
-    if (newY + targetSize.height > boundY + boundH - 10) newY = boundY + boundH - targetSize.height - 10;
-
-    mainWindow.setBounds({
-      x: Math.round(newX),
-      y: Math.round(newY),
-      width: targetSize.width,
-      height: targetSize.height
-    });
-
-    event.sender.send('mode-changed', mode);
+function registerBridgeIpc() {
+  // The preload shim needs the loopback port + shared token before it can
+  // open the body WebSocket, so this handshake is synchronous.
+  ipcMain.on('bridge-config', (event) => {
+    event.returnValue = {
+      port: bridge.port,
+      token: bridge.token,
+      version: app.getVersion()
+    };
   });
 
-  ipcMain.on('set-always-on-top', (event, flag) => {
-    if (mainWindow) {
-      if (process.platform === 'darwin') {
-        mainWindow.setAlwaysOnTop(flag, 'floating', 1);
-      } else {
-        mainWindow.setAlwaysOnTop(flag);
-      }
-    }
+  ipcMain.on('bridge-state-request', () => reportWindowState());
+
+  ipcMain.on('window-apply', (_event, patch) => applyWindowPatch(patch));
+
+  ipcMain.on('window-command', (_event, action) => {
+    if (action === 'minimize') minimizePetWindow();
+    else if (action === 'close') hidePetWindow();
   });
 
-  ipcMain.on('minimize-app', () => {
-    minimizePetWindow();
-  });
-
-  // Clicking close in Pet/Chat window hides to background/tray instead of destroying
-  ipcMain.on('close-app', () => {
-    hidePetWindow();
-  });
-
-  // The settings modal covers the pet window; pausing hops keeps it still
-  // while the user is changing options.
-  ipcMain.on('set-ui-busy', (event, busy) => {
-    uiBusy = !!busy;
-    if (uiBusy) clearRoamTimer();
-    else scheduleRoam(2500);
-  });
-
-  // Pointer activity only reaches the pet while its window is on screen, so this
-  // doubles as the safety net that re-wakes a loop parked by a missed show.
-  ipcMain.on('pet-activity', () => {
-    sendVisibility(true);
-    scheduleRoam(randomBetween(5000, 9000));
-  });
-
-  ipcMain.handle('get-roam-enabled', () => roamEnabled);
-  ipcMain.on('set-roam-enabled', (event, enabled) => setRoamEnabled(enabled));
-
-  ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (win) {
-      win.setIgnoreMouseEvents(ignore, options);
-    }
-  });
+  ipcMain.on('roam-exec', (_event, command) => executeRoam(command));
 }
 
 function showOrRestoreWindow() {
@@ -586,8 +579,7 @@ function createTray() {
       accelerator: 'Option+Space',
       click: () => {
         showOrRestoreWindow();
-        const nextMode = currentMode === 'pet' ? 'chat' : 'pet';
-        mainWindow.webContents.send('toggle-mode-request', nextMode);
+        mainWindow.webContents.send('bridge-input', { type: 'toggle-mode' });
       }
     },
     {
@@ -611,7 +603,7 @@ function createTray() {
       checked: true,
       click: (item) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.setAlwaysOnTop(item.checked);
+          mainWindow.webContents.send('bridge-input', { type: 'set-always-on-top', value: item.checked });
         }
       }
     },
@@ -619,8 +611,12 @@ function createTray() {
       id: 'roam-toggle',
       label: '到處走 (螢幕邊緣)',
       type: 'checkbox',
-      checked: roamEnabled,
-      click: (item) => setRoamEnabled(item.checked)
+      checked: readAppSettings().roamEnabled === true,
+      click: (item) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('bridge-input', { type: 'set-roam-enabled', enabled: item.checked });
+        }
+      }
     },
     {
       label: '開機自動啟動',
@@ -641,14 +637,14 @@ function createTray() {
       label: '撫摸寵物 ❤️',
       click: () => {
         showOrRestoreWindow();
-        mainWindow.webContents.send('pet-interaction', 'pat');
+        mainWindow.webContents.send('bridge-input', { type: 'pat' });
       }
     },
     {
       label: '餵食美味小點心 🍣',
       click: () => {
         showOrRestoreWindow();
-        mainWindow.webContents.send('pet-interaction', 'feed');
+        mainWindow.webContents.send('bridge-input', { type: 'feed' });
       }
     },
     { type: 'separator' },
@@ -660,7 +656,6 @@ function createTray() {
     }
   ]);
 
-  trayMenu = contextMenu;
   tray.setToolTip('AuraPet - AI 桌面夥伴');
   tray.setContextMenu(contextMenu);
 
@@ -689,8 +684,7 @@ function registerShortcuts() {
       showPetWindow();
       mainWindow.focus();
     }
-    const nextMode = currentMode === 'pet' ? 'chat' : 'pet';
-    mainWindow.webContents.send('toggle-mode-request', nextMode);
+    mainWindow.webContents.send('bridge-input', { type: 'toggle-mode' });
   });
 
   // Cmd/Ctrl+Shift+P: Quick Focus / Summon or Hide
@@ -716,8 +710,12 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', showOrRestoreWindow);
 
   app.whenReady().then(() => {
-    roamEnabled = readAppSettings().roamEnabled === true;
-    registerIpcHandlers();
+    bridge = createBridgeServer({ configStore, brainVersion: app.getVersion() });
+    registerBridgeIpc();
+    bridge.start().catch((err) => {
+      logCrash(`bridge server failed to start: ${err.message}`);
+      console.warn('Bridge server failed to start:', err.message);
+    });
     createMainWindow();
     createTray();
     registerShortcuts();
@@ -729,9 +727,9 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.on('before-quit', () => {
-  clearRoamTimer();
   stopWalk();
   if (currentMode === 'pet') savePetPosition();
+  if (bridge) bridge.stop();
 });
 
 app.on('will-quit', () => {
