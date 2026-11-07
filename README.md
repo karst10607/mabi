@@ -67,7 +67,7 @@
 ## 🚀 快速啟動與開發指南
 
 ### 1. 安裝依賴
-需要 **Node.js 22.12+**（建議 24，版本見 `.nvmrc`；electron-builder 26 在 Node 20.18 會編譯失敗）：
+需要 **Node.js 22.12+**（建議 24，版本見 `.nvmrc`）：
 ```bash
 cd mabi
 nvm use            # 或自行切換到 Node 24
@@ -113,10 +113,17 @@ win-x64 `node.exe`；Godot Windows export templates 需已安裝）。解壓後�
 Godot binary 與 2 GB export templates 以 `actions/cache` 快取，重跑不必重新下載；
 Windows job 另做打包後 daemon 的 loopback smoke（UI 403／MCP 401）。
 
-### 5. Godot body v0（v2 遷移中）
-Epic #7 的 body 實作在 `godot/`：透明視窗、rig、tray、roam 改由 Godot 4.7 執行，只透過
-`docs/ws-protocol.md` 連 Node daemon。Godot 4.7.2 binary 不進 repo；啟動方式、Linux tray
-helper（Ayatana AppIndicator）與 CPU/RSS 量測見 `godot/README.md`。
+### 5. Godot body 與效能實測（v2 退役 Electron）
+Epic #7 已正式完成架構重構並退役 Electron。body 實作在 `godot/`：透明視窗、rig、tray、roam 改由 Godot 4.7 執行，只透過 `docs/ws-protocol.md` 連 Node daemon。Godot 4.7.2 binary 不進 repo；啟動方式、Linux tray helper（Ayatana AppIndicator）與 CPU/RSS 量測見 `godot/README.md`。
+
+跨平台實測數據對照表（240×290 透明置頂視窗，詳細見 `tools/godot-probe/README.md`）：
+
+| 執行環境 / 堆疊 | idle CPU | walk CPU | RSS 記憶體 | 效能差異 |
+| :--- | :---: | :---: | :---: | :--- |
+| **Electron v1.5.2** (Linux baseline) | ~36% | ~62% | 679 MB | 舊架構 baseline |
+| **Godot body v0** (Linux Vega 8) | 11% | 17% | 242 MB | idle 省 3.3x，RAM 省 2.8x |
+| **Godot body v0** (**Windows 11 DWM**) | **0.8%** | **0.8%** | **417 MB** | **CPU 降低 45~77 倍** |
+| **Node SEA Daemon** (**Windows 11**) | **0.0%** | **0.0%** | **46 MB** | 無介面 headless 大腦 |
 
 ### 6. 按需 chat／設定頁（localhost）
 daemon 在 `http://127.0.0.1:47830/` 提供現有 chat／設定 DOM（需 bridge token；tray

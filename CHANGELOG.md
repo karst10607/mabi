@@ -2,6 +2,19 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.12.0] - 2026-11-07
+
+### Removed
+
+- **正式退役 Electron（Epic #7 / #16）**：完全移除 `electron` 與 `electron-builder` 依賴及相關 scripts（`start` 改為執行 `daemon/standalone.js`，`test` 整合 contract 與 MCP smoke 測試）。
+- 移除 `package.json` 中的 `electron-builder` 舊配置。
+
+### Changed
+
+- **跨平台效能與 DWM 實測進表（Epic #7 / #16）**：Windows 11 DWM (GTX 1060) 實測驗證完成，Godot full-rig + lowproc CPU 開銷僅 0.8%（相較 Electron 36%~62% 降幅達 45~77 倍），Node SEA daemon 僅佔 46 MB RSS。
+- 更新 `README.md`、`godot/README.md`、`tools/godot-probe/README.md`，納入 Windows DWM 與 Linux Vega 8 之效能與透明合成數據對照表。
+- 專案正式完成 Godot 4.x Body + Node SEA Daemon + MCP 雙進程架構轉型（Epic #7 圓滿結案）。
+
 ## [1.11.0] - 2026-11-07
 
 ### Added

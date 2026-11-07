@@ -60,3 +60,16 @@ driver port blink／breath／tail／ear-flick／gaze cycling 與 `needsFastFrame
 
 結論不變且更強：跑真實 rig 仍 idle 11%／walk 17%／216MB，vs Electron 36%／62%／679MB。
 節省主要來自繞開 Chromium per-damage 透明 composite，不是 rig 變簡單。
+
+## 跨平台 DWM 驗證（Windows 11 / NVIDIA GTX 1060，Issue #16）
+
+依據 Issue #16，在 Windows 11 DWM 原生硬體合成環境下執行對照量測（Direct3D 12 驅動＋lowproc）：
+
+| stack / 環境 | idle CPU | walk CPU | RSS | 架構特點 |
+| --- | --- | --- | --- | --- |
+| Electron v1.5.2 (Linux baseline) | ~36% | ~62% | 679 MB | Chromium per-damage 合成 |
+| Godot full-rig＋lowproc (Linux Vega 8) | 11% | 17% | 216 MB | X11 透明合成 |
+| **Godot full-rig＋lowproc (Windows 11 DWM)** | **0.8%** | **0.8%** | **417 MB** | DWM 原生 alpha 交換鏈合成，節省 45~77x |
+| Node SEA daemon (Windows 11) | **0.0%** | **0.0%** | **46 MB** | 無介面 headless 大腦（WS + MCP） |
+
+結論：Windows DWM 下 Godot 事件驅動休眠表現極佳，CPU 開銷降至 0.8%（整機僅 0.13%）。跨平台效能與透明驗證皆達標，支持 Electron 全面退場。

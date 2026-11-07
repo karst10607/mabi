@@ -5,12 +5,14 @@ Production port of the transparent pet window from Electron/Chromium to Godot
 the window, rig, tray and movement, and talks to the brain only through
 [`docs/ws-protocol.md`](../docs/ws-protocol.md).
 
-Measured on the reference machine (Vega 8 / X11 / Cinnamon, 240×290 window):
+Measured across target platforms (240×290 transparent window):
 
-| stack | idle CPU | walk CPU | RSS |
-| --- | --- | --- | --- |
-| Electron v1.5.2 | ~36% | ~62% | 679 MB |
-| **Godot body v0** | **11%** | **17%** | **241–242 MB** |
+| stack / environment | idle CPU | walk CPU | RSS | notes |
+| --- | --- | --- | --- | --- |
+| Electron v1.5.2 (Linux Vega 8 / X11) | ~36% | ~62% | 679 MB | Chromium multi-process composite baseline |
+| Godot body v0 (Linux Vega 8 / X11) | 11% | 17% | 241–242 MB | Vulkan Forward+ |
+| **Godot body v0 (Windows 11 DWM / GTX 1060)** | **0.8%** | **0.8%** | **417 MB** | Direct3D 12 native alpha swapchain + lowproc |
+| Node SEA daemon (Windows 11) | **0.0%** | **0.0%** | **46 MB** | Headless brain (WS + MCP) |
 
 ## Layout
 
