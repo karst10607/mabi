@@ -35,8 +35,8 @@ GODOT_BIN=/path/to/Godot_v4.7.2-stable_linux.x86_64
 ```
 
 Arguments (after `--`): `--config=PATH`, `--token=...`, `--port=N`,
-`--lowproc`, `--rate=N`, `--walk`, `--shot=PATH`, `--shot-after=SECONDS`,
-`--no-tray`, `--selftest=tray`.
+`--ui-port=N`, `--lowproc`, `--rate=N`, `--walk`, `--shot=PATH`,
+`--shot-after=SECONDS`, `--no-tray`, `--selftest=tray`.
 
 `--shot` writes the viewport PNG (alpha preserved) and exits; it is what the
 committed `docs/body-v0-*.png` evidence was captured with.
@@ -68,7 +68,9 @@ actions are normal protocol messages (`mode.toggle`, `window.set`,
 the body. Dependencies are already present on Cinnamon:
 `python3-gi`, `gir1.2-ayatanaappindicator3-0.1`.
 
-The helper exits when the body process dies (`--parent-pid`).
+The helper exits when the body process dies (`--parent-pid`). Its
+「開啟對話／設定」 item opens the daemon UI page
+(`http://127.0.0.1:<uiPort>/?token=…`, see `ui/README.md`).
 
 ## Known v0 limitations
 

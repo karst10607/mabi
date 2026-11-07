@@ -14,6 +14,7 @@ import path from 'node:path';
 const require = createRequire(import.meta.url);
 const { createConfigStore } = require('../../daemon/config-store.js');
 const { createBridgeServer } = require('../../daemon/bridge-server.js');
+const { createUiServer, DEFAULT_UI_PORT } = require('../../daemon/ui-server.js');
 
 const args = process.argv.slice(2);
 const readArg = (name, fallback) => {
@@ -27,9 +28,13 @@ const port = Number(readArg('port', '47821'));
 
 const store = createConfigStore({ dir });
 const bridge = createBridgeServer({ configStore: store, port, brainVersion: 'dev' });
+const uiPort = Number(readArg('ui-port', String(DEFAULT_UI_PORT)));
 
 bridge.start().then(() => {
   console.log(`dev-brain: ws://127.0.0.1:${port} config=${dir}`);
+  const ui = createUiServer({ configStore: store, token: bridge.token, bridgePort: port, port: uiPort });
+  ui.start().catch((err) => console.error(`dev-brain: ui failed: ${err.message}`));
+  console.log(`dev-brain: ui http://127.0.0.1:${uiPort}/ (open with ?token=<bridgeToken>)`);
   console.log('dev-brain: Ctrl-C to stop');
 }).catch((err) => {
   console.error(`dev-brain: failed to start: ${err.message}`);

@@ -8,3 +8,4 @@ renderer/models/pet.glb
 
 # Godot import cache
 godot/.godot/
+__pycache__/

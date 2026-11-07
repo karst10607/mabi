@@ -9,6 +9,7 @@
 
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
+const AIService = require('./ai-service');
 
 const PROTOCOL_VERSION = 1;
 const DEFAULT_PORT = 47821;
@@ -36,6 +37,12 @@ function createBridgeServer(options = {}) {
 
   const token = ensureToken(configStore);
   const session = crypto.randomBytes(8).toString('hex');
+  const ai = options.aiService || new AIService({
+    store: {
+      get: (key) => configStore.get(key),
+      set: (key, value) => configStore.patch({ [key]: value })
+    }
+  });
   const state = {
     mode: 'pet',
     posture: configStore.get('posture') || 'sit',
@@ -128,6 +135,78 @@ function createBridgeServer(options = {}) {
     const a = Buffer.from(given);
     const b = Buffer.from(token);
     return a.length === b.length && crypto.timingSafeEqual(a, b);
+  }
+
+  function publicConfig() {
+    const all = configStore.getAll();
+    delete all.bridgeToken;
+    delete all.schemaVersion;
+    return all;
+  }
+
+  function applySettings(ws, msg) {
+    const { id, patch } = msg;
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+      if (id != null) fail(ws, id, 'bad-request', 'patch must be an object');
+      return;
+    }
+    const applied = {};
+    const removals = [];
+    for (const [key, value] of Object.entries(patch)) {
+      if (key === 'bridgeToken' || key === 'schemaVersion') continue;
+      applied[key] = value;
+      if (value === null) removals.push(key);
+    }
+    for (const key of removals) delete applied[key];
+    if (removals.length) configStore.remove(removals);
+    const flat = Object.fromEntries(Object.entries(applied).filter(([, v]) => v !== null));
+    if (Object.keys(flat).length) configStore.patch(flat);
+    ai.loadConfig();
+    if (id != null) reply(ws, id, { patch: { ...flat, ...Object.fromEntries(removals.map((k) => [k, null])) } });
+    toUi('settings.changed', { patch });
+  }
+
+  function startChat(ws, msg) {
+    const text = typeof msg.text === 'string' ? msg.text.trim() : '';
+    if (!text) return;
+    if (!ws.chat) ws.chat = { history: [], active: false, full: '' };
+    if (ws.chat.active) {
+      ai.abortCurrent();
+      ws.chat.active = false;
+    }
+    const stream = { history: ws.chat.history, active: true, full: '' };
+    ws.chat = stream;
+    stream.history.push({ role: 'user', content: text });
+    ai.streamChat(
+      stream.history,
+      (partial) => {
+        if (!stream.active) return;
+        stream.full = partial;
+        emit(ws, 'chat.delta', { text: partial });
+      },
+      () => {
+        if (!stream.active) return;
+        stream.active = false;
+        stream.history.push({ role: 'assistant', content: stream.full });
+        emit(ws, 'chat.done', { full: stream.full });
+      },
+      (error) => {
+        if (!stream.active) return;
+        stream.active = false;
+        emit(ws, 'chat.error', { error: String(error) });
+      }
+    ).catch((err) => {
+      if (!stream.active) return;
+      stream.active = false;
+      emit(ws, 'chat.error', { error: err.message });
+    });
+  }
+
+  function abortChat(ws) {
+    if (!ws.chat || !ws.chat.active) return;
+    ai.abortCurrent();
+    ws.chat.active = false;
+    emit(ws, 'chat.done', { full: ws.chat.full });
   }
 
   function handleHello(ws, msg) {
@@ -260,6 +339,18 @@ function createBridgeServer(options = {}) {
         state.uiBusy = Boolean(msg.busy);
         applyRoamPolicy();
         return;
+      case 'chat.send':
+        startChat(ws, msg);
+        return;
+      case 'chat.abort':
+        abortChat(ws);
+        return;
+      case 'settings.get':
+        if (id != null) reply(ws, id, { patch: publicConfig() });
+        return;
+      case 'settings.set':
+        applySettings(ws, msg);
+        return;
       case 'activity':
         if (canRoam()) scheduleRoam(randomBetween(5000, 9000));
         return;
@@ -300,6 +391,10 @@ function createBridgeServer(options = {}) {
     ws.on('close', () => {
       clearTimeout(ws.helloTimeout);
       uiClients.delete(ws);
+      if (ws.chat && ws.chat.active) {
+        ai.abortCurrent();
+        ws.chat.active = false;
+      }
       if (body === ws) {
         body = null;
         state.roaming = false;
