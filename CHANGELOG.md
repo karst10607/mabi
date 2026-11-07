@@ -2,6 +2,20 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.10.0] - 2026-11-07
+
+### Added
+
+- **MCP client face（Epic #7 / #13）**：新增 `daemon/mcp-client.js`，以官方 `@modelcontextprotocol/sdk` 連接使用者既有的筆記 MCP 上游：Streamable HTTP（`StreamableHTTPClientTransport`）與 stdio 子進程（`StdioClientTransport`）兩種 transport。工具以 `<server>.<tool>` 命名空間聚合，client capabilities 只宣告 `tools`（不轉發 sampling／roots）。
+- **Joplin 內建 MCP 接法**：Joplin 的 `POST http://127.0.0.1:41184/mcp` 以 `tokenIn: "query"` 帶 `api.token`；實測 `initialize`、`tools/list`（12 tools）與 `tools/call list_notebooks` 成功。Obsidian／Notion 同走 `mcpUpstreams` 設定（stdio command 或 Streamable HTTP URL）。
+- `tools/mcp/upstream-smoke.mjs`：對真實上游列出 tools／呼叫一次工具／可選搜尋，並斷言 token 不出現在 status 或 log（適合貼進 issue 當證據）。
+
+### Changed
+
+- `mcp.status`／`mcp.servers.get` 改回報**真實連線狀態**（`configured`／`connecting`／`ready`／`error`／`stopped`）、`toolCount` 與遮罩後的 `error`；重連 backoff 1s→30s，stdio 子進程隨 daemon 停止關閉。
+- `notes.search` 改由 MCP client 執行，stdio 上游也能參與聚合；上游 token／env 只存 0600 config，`settings.get`／`settings.changed` 會去除 token、`env` 與 `mcpToken`，WS／status 只留 `auth: "configured"` 標記。
+- 設定頁 MCP 狀態顯示工具數與（遮罩後）錯誤原因；`docs/ws-protocol.md` 補上游欄位與 Joplin query token 說明；contract test 增至 16 項並驗證狀態 enum／憑證不外洩；MCP smoke test 增至 34 項（含 stdio transport、命名空間、token 遮罩）。
+
 ## [1.9.0] - 2026-11-07
 
 ### Added

@@ -21,6 +21,7 @@ const require = createRequire(import.meta.url);
 const { createConfigStore } = require('../../daemon/config-store.js');
 const { createBridgeServer } = require('../../daemon/bridge-server.js');
 const { createMcpServer, TOOL_NAMES } = require('../../daemon/mcp-server.js');
+const { createMcpClient } = require('../../daemon/mcp-client.js');
 
 const quiet = { info() {}, warn() {} };
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aurapet-mcp-smoke-'));
@@ -92,9 +93,11 @@ async function rawRequest({ method = 'POST', headers = {}, body = '' }) {
 
 let bridge = null;
 let mcpServer = null;
+let mcpClient = null;
 let upstream = null;
 let bodyClient = null;
 let uiClient = null;
+const mcpLogs = [];
 
 async function rpc(payload, { token = mcpServer.token, origin, session } = {}) {
   const headers = {
@@ -186,10 +189,63 @@ function startFakeUpstream() {
   });
 }
 
+function writeFakeStdioServer() {
+  const script = path.join(root, 'fake-stdio-server.cjs');
+  fs.writeFileSync(script, `'use strict';
+const readline = require('readline');
+const send = (message) => process.stdout.write(JSON.stringify(message) + '\\n');
+const rl = readline.createInterface({ input: process.stdin });
+rl.on('line', (line) => {
+  let message;
+  try { message = JSON.parse(line); } catch { return; }
+  const hasId = Object.hasOwn(message, 'id');
+  switch (message.method) {
+    case 'initialize':
+      send({ jsonrpc: '2.0', id: message.id, result: {
+        protocolVersion: '2025-06-18',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'fake-stdio', version: '0.0.0' }
+      } });
+      return;
+    case 'notifications/initialized':
+      return;
+    case 'tools/list':
+      send({ jsonrpc: '2.0', id: message.id, result: { tools: [{
+        name: 'search_notes',
+        description: 'stdio notes search',
+        inputSchema: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'integer' } }, required: ['query'] }
+      }] } });
+      return;
+    case 'tools/call':
+      send({ jsonrpc: '2.0', id: message.id, result: { content: [{
+        type: 'text',
+        text: JSON.stringify([{ title: 'Stdio note', snippet: 'hit ' + (message.params.arguments.query || '') }])
+      }] } });
+      return;
+    default:
+      if (hasId) send({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'method not found' } });
+  }
+});
+process.stdin.on('end', () => process.exit(0));
+`);
+  return script;
+}
+
 async function main() {
   bridge = createBridgeServer({ configStore: store, port: 0, brainVersion: 'smoke', log: quiet });
   await bridge.start();
-  mcpServer = createMcpServer({ configStore: store, bridge, port: 0, log: quiet });
+  mcpClient = createMcpClient({
+    configStore: store,
+    log: { info: (m) => mcpLogs.push(String(m)), warn: (m) => mcpLogs.push(String(m)) },
+    backoff: { initial: 100, max: 1000, factor: 2 },
+    connectTimeoutMs: 4000,
+    listTimeoutMs: 4000,
+    callTimeoutMs: 4000,
+    onStatus: (servers) => bridge.setUpstreamStatus(servers)
+  });
+  bridge.attachMcpClient(mcpClient);
+  await mcpClient.start();
+  mcpServer = createMcpServer({ configStore: store, bridge, mcpClient, port: 0, log: quiet });
   await mcpServer.start();
   console.log(`# bridge ws://127.0.0.1:${bridge.port} · mcp http://127.0.0.1:${mcpServer.port()}${mcpServer.path}`);
 
@@ -319,7 +375,39 @@ async function main() {
 
   upstream = await startFakeUpstream();
   const upstreamUrl = `http://127.0.0.1:${upstream.address().port}/mcp`;
-  store.patch({ mcpUpstreams: [{ name: 'fake-notes', url: upstreamUrl, transport: 'streamable-http' }] });
+  const stdioScript = writeFakeStdioServer();
+  const upstreamToken = 'smoke-upstream-token-value';
+  store.patch({
+    mcpUpstreams: [
+      { name: 'fake-notes', url: upstreamUrl, transport: 'streamable-http', token: upstreamToken },
+      { name: 'stdio-notes', transport: 'stdio', command: process.execPath, args: [stdioScript] }
+    ]
+  });
+  await mcpClient.reload();
+  await waitFor(() => mcpClient.getServers().every((server) => server.state === 'ready'), 8000);
+  const upstreamStatus = mcpClient.getServers();
+  check('http upstream reaches ready', upstreamStatus.find((s) => s.name === 'fake-notes')?.state === 'ready');
+  check('stdio upstream reaches ready', upstreamStatus.find((s) => s.name === 'stdio-notes')?.state === 'ready');
+  check('status reports real tool counts', upstreamStatus.every((s) => s.toolCount === 1), JSON.stringify(upstreamStatus.map((s) => s.toolCount)));
+
+  const namespaced = mcpClient.getTools().map((tool) => tool.name);
+  check('tools are namespaced <server>.<tool>', namespaced.includes('fake-notes.search_notes') && namespaced.includes('stdio-notes.search_notes'), namespaced.join(', '));
+  const directCall = await mcpClient.callTool('fake-notes.search_notes', { query: 'cat' });
+  check('namespaced tools/call succeeds', directCall?.content?.[0]?.type === 'text');
+
+  await waitFor(() => uiClient.events.some((message) => message.t === 'mcp.status' &&
+    (message.servers || []).some((server) => server.name === 'fake-notes' && server.state === 'ready')));
+  const liveStatus = uiClient.events.filter((message) => message.t === 'mcp.status').pop();
+  check('ui receives live mcp.status', Boolean(liveStatus?.servers?.find((s) => s.name === 'stdio-notes' && s.state === 'ready')));
+  check('mcp.status carries toolCount', liveStatus?.servers?.every((server) => Number.isInteger(server.toolCount)));
+
+  uiClient.socket.send(JSON.stringify({ v: 1, id: 99, t: 'settings.get' }));
+  await waitFor(() => uiClient.events.some((message) => message.id === 99 && 'ok' in message));
+  const settingsReply = uiClient.events.find((message) => message.id === 99 && 'ok' in message);
+  check('settings.get redacts upstream tokens', !JSON.stringify(settingsReply).includes(upstreamToken));
+  check('settings.get keeps an auth marker', settingsReply?.patch?.mcpUpstreams?.[0]?.auth === 'configured');
+  check('status and logs contain no token', !JSON.stringify(upstreamStatus).includes(upstreamToken) && !mcpLogs.join('\n').includes(upstreamToken));
+
   const search = await rpc({
     jsonrpc: '2.0',
     id: 8,
@@ -327,8 +415,8 @@ async function main() {
     params: { name: 'notes.search', arguments: { query: 'cat', limit: 5 } }
   }, { session });
   const searchPayload = search.json?.result?.structuredContent;
-  check('notes.search aggregates upstream results', searchPayload?.results?.length === 1 && searchPayload.results[0].source === 'fake-notes', `hits=${searchPayload?.results?.length}`);
-  check('notes.search reports upstream health', searchPayload?.sources?.[0]?.state === 'ok', `tool=${searchPayload?.sources?.[0]?.tool}`);
+  check('notes.search aggregates upstream results', searchPayload?.results?.length === 2, `hits=${searchPayload?.results?.length}`);
+  check('notes.search reports both upstreams healthy', (searchPayload?.sources ?? []).filter((s) => s.state === 'ok').length === 2, JSON.stringify(searchPayload?.sources));
 
   // --- unknown tool ---------------------------------------------------
   const unknown = await rpc({
@@ -345,6 +433,9 @@ async function main() {
     headers: { Authorization: `Bearer ${mcpServer.token}`, 'Mcp-Session-Id': session }
   });
   check('DELETE terminates the session', del.status === 204, `HTTP ${del.status}`);
+
+  await mcpClient.stop();
+  check('stop marks every upstream stopped', mcpClient.getServers().every((server) => server.state === 'stopped'));
 }
 
 main()
@@ -356,6 +447,7 @@ main()
     if (bodyClient) bodyClient.socket.close();
     if (uiClient) uiClient.socket.close();
     if (upstream) upstream.close();
+    if (mcpClient) await mcpClient.stop();
     if (mcpServer) mcpServer.stop();
     if (bridge) bridge.stop();
     await sleep(100);

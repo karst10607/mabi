@@ -125,6 +125,27 @@ allowlist。tools：`pet.say`、`pet.mood.get`、`pet.ask`＋`pet.ask.result`（
 `notes.search`（聚合 `mcpUpstreams` 設定的上游筆記 MCP）。body 完全不知道 MCP 存在；
 設定頁「系統設定」可看 server／上游狀態。細節見 `daemon/README.md`。
 
+### 8. MCP client face（上游筆記 MCP 聚合）
+daemon 也是 MCP **client**：`mcpUpstreams`（`~/.config/aurapet-desktop/app-settings.json`，
+0600）列出既有筆記 server，工具以 `<server>.<tool>` 命名。支援 Streamable HTTP 與 stdio：
+
+```jsonc
+{
+  "mcpUpstreams": [
+    { "name": "joplin", "transport": "streamable-http",
+      "url": "http://127.0.0.1:41184/mcp", "token": "<Joplin api.token>", "tokenIn": "query" },
+    { "name": "obsidian", "transport": "stdio",
+      "command": "npx", "args": ["-y", "mcp-obsidian"], "env": { "OBSIDIAN_API_KEY": "<key>" } }
+  ]
+}
+```
+
+Joplin 需在設定開啟 Web Clipper（API token 在「Web Clipper → API token」）；其內建 endpoint
+只吃 `?token=`，所以 `tokenIn: "query"`。token／env 只寫 config，不進 log、WS 或 `mcp.status`；
+`settings.get` 會回傳 `auth: "configured"` 而不是憑證。重連 backoff 1s→30s，stdio 子進程
+會隨 daemon 停止。驗證：`node tools/mcp/upstream-smoke.mjs --from-joplin`（真實上游
+tools/list＋tools/call，並斷言 token 不外洩）。
+
 ---
 
 ## 📂 專案檔案結構
@@ -141,7 +162,7 @@ mabi/
 ├── packaging/            # Linux launcher 與 .desktop（AppImage／deb）
 ├── tools/dist/           # Linux 打包：Godot export＋Node SEA＋AppImage／deb
 ├── tools/bridge/         # 協議 schema、contract test、headless dev brain
-├── tools/mcp/            # MCP server face 端到端 smoke test
+├── tools/mcp/            # MCP server／client face smoke tests
 ├── assets/               # 托盤圖示 (macOS template PNG + Win/Linux 彩色 PNG)
 ├── build/icon.png        # 應用程式圖示 (electron-builder 會轉成 .icns/.ico)
 ├── .github/workflows/    # GitHub Actions 遠端建置與 Release

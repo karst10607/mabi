@@ -102,9 +102,17 @@ MCP server face 由 `daemon/mcp-server.js` 以標準 Streamable HTTP（127.0.0.1
 ### mcp（只走 ui↔brain；body 永远看不到 MCP 細節）
 | t | 方向 | 欄位 | 語意 |
 | --- | --- | --- | --- |
-| mcp.servers.get | ui→brain | (id) | reply {servers:[{name, transport, state, toolCount}]} |
-| mcp.status | brain→ui | servers | upstream 連線／工具數變化廣播 |
+| mcp.servers.get | ui→brain | (id) | reply {servers:[{name, transport, state, toolCount, error?}]} |
+| mcp.status | brain→ui | servers | 上游連線／工具數變化廣播（同上；憑證與 URL 一律不進 payload） |
 | mcp.server.status | brain→ui | enabled, port, clients, tools | MCP server face（`daemon/mcp-server.js`）狀態：監聽埠、session 數、已實作 tool 名 |
+
+上游欄位：`transport` 為 `stdio`／`streamable-http`；`state` 為 `configured`／`connecting`／
+`ready`／`error`／`stopped`；`error` 只在失敗時出現，且已遮罩 token。連線由
+`daemon/mcp-client.js`（issue #13）管理：`mcpUpstreams` 設定（0600）每項
+`{name, transport, url|command, args?, env?, token?, tokenIn?: "header"|"query"}`，
+工具內部命名為 `<server>.<tool>`，重連 backoff 1s→30s。Joplin 內建 endpoint 需
+`tokenIn: "query"`（`http://127.0.0.1:41184/mcp?token=…`），其 token 只存 config，
+不進 log／WS／status。
 
 ## 5. 舊 preload channel 對照（遷移血統）
 

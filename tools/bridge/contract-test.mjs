@@ -7,6 +7,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
 const require = createRequire(import.meta.url);
 const { TOOL_NAMES } = require(join(root, 'daemon', 'mcp-server.js'));
+const { UPSTREAM_STATES } = require(join(root, 'daemon', 'mcp-client.js'));
 const schema = JSON.parse(readFileSync(join(here, 'protocol.schema.json'), 'utf8'));
 const doc = readFileSync(join(root, 'docs', 'ws-protocol.md'), 'utf8');
 const preload = readFileSync(join(root, 'preload.js'), 'utf8');
@@ -201,7 +202,8 @@ const fixtures = {
     },
   ],
   'mcp.status': [
-    { form: 'event', msg: evt('mcp.status', { servers: [{ name: 'joplin', transport: 'streamable-http', state: 'ready', toolCount: 5 }] }) },
+    { form: 'event', msg: evt('mcp.status', { servers: [{ name: 'joplin', transport: 'streamable-http', state: 'ready', toolCount: 12 }] }) },
+    { form: 'event', msg: evt('mcp.status', { servers: [{ name: 'joplin', transport: 'streamable-http', state: 'error', toolCount: 0, error: 'connection refused' }] }) },
   ],
   'mcp.server.status': [
     { form: 'event', msg: evt('mcp.server.status', { enabled: true, port: 47822, clients: 1, tools: TOOL_NAMES }) },
@@ -392,6 +394,26 @@ check('mcp server face declares the implemented tools (issue #14)', () => {
   assert(JSON.stringify(fixture.tools) === JSON.stringify(expected), 'mcp.server.status fixture tools differ from daemon');
   assert(doc.includes('mcp.server.status'), 'docs section 4 is missing mcp.server.status');
   return `${expected.length} tools`;
+});
+
+check('mcp upstream status matches the client states and carries no secrets (issue #13)', () => {
+  const getItem = schema.messages['mcp.servers.get'].reply.fields.servers.items;
+  const statusItem = schema.messages['mcp.status'].fields.servers.items;
+  assert(JSON.stringify(getItem.fields.state.enum) === JSON.stringify(UPSTREAM_STATES),
+    `mcp.servers.get state enum ${JSON.stringify(getItem.fields.state.enum)} != ${JSON.stringify(UPSTREAM_STATES)}`);
+  assert(JSON.stringify(statusItem.fields.state.enum) === JSON.stringify(UPSTREAM_STATES),
+    `mcp.status state enum ${JSON.stringify(statusItem.fields.state.enum)} != ${JSON.stringify(UPSTREAM_STATES)}`);
+  const samples = [
+    fixtures['mcp.servers.get'][1].msg,
+    ...fixtures['mcp.status'].map((fixture) => fixture.msg),
+  ];
+  for (const sample of samples) {
+    const text = JSON.stringify(sample);
+    assert(!/"(token|secret|password|authorization)"|bearer|token=/i.test(text), `MCP status payload leaks credentials: ${text}`);
+    assert(!/"url"/.test(text), `MCP status payload leaks upstream URL: ${text}`);
+  }
+  assert(doc.includes('toolCount') && doc.includes('streamable-http'), 'docs section 4 is missing upstream status fields');
+  return `${samples.length} payloads`;
 });
 
 check('docs status is CANDIDATE and points to machine-readable contract', () => {

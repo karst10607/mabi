@@ -424,8 +424,9 @@ document.addEventListener('DOMContentLoaded', () => {
       ? ` · tools：${server.tools.join('、')}`
       : '';
     const upstreams = mcp.upstreams || [];
+    const describe = (s) => `${s.name}（${s.state}${s.toolCount ? ` · ${s.toolCount} tools` : ''}${s.error ? `：${s.error}` : ''}）`;
     const up = upstreams.length
-      ? ` · 上游筆記 MCP：${upstreams.map((s) => `${s.name}（${s.state}）`).join('、')}`
+      ? ` · 上游筆記 MCP：${upstreams.map(describe).join('、')}`
       : ' · 未設定上游筆記 MCP';
     el.textContent = `${head}${tools}${up}`;
   }

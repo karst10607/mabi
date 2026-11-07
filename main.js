@@ -5,6 +5,7 @@ const { createConfigStore } = require('./daemon/config-store');
 const { createBridgeServer } = require('./daemon/bridge-server');
 const { createUiServer, DEFAULT_UI_PORT } = require('./daemon/ui-server');
 const { createMcpServer, DEFAULT_MCP_PORT } = require('./daemon/mcp-server');
+const { createMcpClient } = require('./daemon/mcp-client');
 
 app.commandLine.appendSwitch('disable-domain-blocking-for-3d-apis');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
@@ -50,6 +51,7 @@ let clickThrough = false;
 let bridge = null;
 let uiServer = null;
 let mcpServer = null;
+let mcpClient = null;
 
 const configStore = createConfigStore({ dir: app.getPath('userData') });
 
@@ -717,9 +719,18 @@ if (!app.requestSingleInstanceLock()) {
     bridge = createBridgeServer({ configStore, brainVersion: app.getVersion() });
     registerBridgeIpc();
     bridge.start().then(() => {
+      mcpClient = createMcpClient({
+        configStore,
+        onStatus: (servers) => bridge.setUpstreamStatus(servers)
+      });
+      bridge.attachMcpClient(mcpClient);
+      mcpClient.start().catch((err) => {
+        console.warn('MCP upstream client failed to start:', err.message);
+      });
       mcpServer = createMcpServer({
         configStore,
         bridge,
+        mcpClient,
         port: Number(configStore.get('mcpPort')) || DEFAULT_MCP_PORT
       });
       mcpServer.start().catch((err) => {
@@ -749,12 +760,25 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
-app.on('before-quit', () => {
-  stopWalk();
-  if (currentMode === 'pet') savePetPosition();
-  if (uiServer) uiServer.stop();
-  if (mcpServer) mcpServer.stop();
-  if (bridge) bridge.stop();
+let quitCleanupDone = false;
+app.on('before-quit', (event) => {
+  if (quitCleanupDone) return;
+  // Give the MCP client face a chance to close stdio upstream children before
+  // Electron tears the process down.
+  event.preventDefault();
+  (async () => {
+    try {
+      stopWalk();
+      if (currentMode === 'pet') savePetPosition();
+      if (uiServer) uiServer.stop();
+      if (mcpClient) await mcpClient.stop();
+      if (mcpServer) mcpServer.stop();
+      if (bridge) bridge.stop();
+    } finally {
+      quitCleanupDone = true;
+      app.quit();
+    }
+  })();
 });
 
 app.on('will-quit', () => {

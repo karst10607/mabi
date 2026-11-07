@@ -16,6 +16,7 @@ const { createConfigStore } = require('../../daemon/config-store.js');
 const { createBridgeServer } = require('../../daemon/bridge-server.js');
 const { createUiServer, DEFAULT_UI_PORT } = require('../../daemon/ui-server.js');
 const { createMcpServer, DEFAULT_MCP_PORT } = require('../../daemon/mcp-server.js');
+const { createMcpClient } = require('../../daemon/mcp-client.js');
 
 const args = process.argv.slice(2);
 const readArg = (name, fallback) => {
@@ -34,13 +35,20 @@ const uiPort = Number(readArg('ui-port', String(DEFAULT_UI_PORT)));
 const mcpPort = Number(readArg('mcp-port', String(DEFAULT_MCP_PORT)));
 let ui = null;
 let mcp = null;
+let mcpClient = null;
 
-bridge.start().then(() => {
+bridge.start().then(async () => {
   console.log(`dev-brain: ws://127.0.0.1:${bridge.port} config=${dir}`);
+  mcpClient = createMcpClient({
+    configStore: store,
+    onStatus: (servers) => bridge.setUpstreamStatus(servers)
+  });
+  bridge.attachMcpClient(mcpClient);
+  await mcpClient.start();
   ui = createUiServer({ configStore: store, token: bridge.token, bridgePort: bridge.port, port: uiPort });
   ui.start().catch((err) => console.error(`dev-brain: ui failed: ${err.message}`));
   console.log(`dev-brain: ui http://127.0.0.1:${uiPort}/ (open with ?token=<bridgeToken>)`);
-  mcp = createMcpServer({ configStore: store, bridge, port: mcpPort });
+  mcp = createMcpServer({ configStore: store, bridge, port: mcpPort, mcpClient });
   mcp.start()
     .then(() => console.log(`dev-brain: mcp http://127.0.0.1:${mcp.port()}${mcp.path} (token=mcpToken in ${dir}/app-settings.json)`))
     .catch((err) => console.error(`dev-brain: mcp failed: ${err.message}`));
@@ -50,7 +58,8 @@ bridge.start().then(() => {
   process.exit(1);
 });
 
-const stop = () => {
+const stop = async () => {
+  if (mcpClient) await mcpClient.stop();
   if (mcp) mcp.stop();
   bridge.stop();
   process.exit(0);

@@ -62,6 +62,8 @@ function createBridgeServer(options = {}) {
   const uiClients = new Set();
   let roamTimer = null;
   let mcpStatus = { enabled: false, port: 0, clients: 0, tools: [] };
+  let mcpClient = options.mcpClient || null;
+  let upstreamStatus = null;
 
   const send = (ws, message) => {
     if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ v: PROTOCOL_VERSION, ...message }));
@@ -91,6 +93,8 @@ function createBridgeServer(options = {}) {
   }
 
   function upstreamServers() {
+    if (mcpClient) return mcpClient.getServers();
+    if (Array.isArray(upstreamStatus)) return upstreamStatus;
     const raw = configStore.get('mcpUpstreams');
     if (!Array.isArray(raw)) return [];
     const out = [];
@@ -98,8 +102,7 @@ function createBridgeServer(options = {}) {
     for (const entry of raw) {
       if (!entry || typeof entry !== 'object') continue;
       const name = typeof entry.name === 'string' ? entry.name.trim() : '';
-      const url = typeof entry.url === 'string' ? entry.url.trim() : '';
-      if (!name || !url || seen.has(name)) continue;
+      if (!name || seen.has(name)) continue;
       seen.add(name);
       out.push({
         name,
@@ -109,6 +112,31 @@ function createBridgeServer(options = {}) {
       });
     }
     return out;
+  }
+
+  // MCP client face → ui broadcast. Payloads never contain tokens or URLs.
+  function setUpstreamStatus(servers) {
+    upstreamStatus = Array.isArray(servers) ? servers : [];
+    toUi('mcp.status', { servers: upstreamStatus });
+    return upstreamStatus;
+  }
+
+  function redactUpstreams(list) {
+    if (!Array.isArray(list)) return list;
+    return list.map((entry) => {
+      if (!entry || typeof entry !== 'object') return entry;
+      const { token, env, ...rest } = entry;
+      return {
+        ...rest,
+        ...(token ? { auth: 'configured' } : {}),
+        ...(env ? { envKeys: Object.keys(env) } : {})
+      };
+    });
+  }
+
+  function redactPatch(patch) {
+    if (!patch || typeof patch !== 'object' || !Object.hasOwn(patch, 'mcpUpstreams')) return patch;
+    return { ...patch, mcpUpstreams: redactUpstreams(patch.mcpUpstreams) };
   }
 
   function clearRoamTimer() {
@@ -180,7 +208,9 @@ function createBridgeServer(options = {}) {
   function publicConfig() {
     const all = configStore.getAll();
     delete all.bridgeToken;
+    delete all.mcpToken;
     delete all.schemaVersion;
+    if (Array.isArray(all.mcpUpstreams)) all.mcpUpstreams = redactUpstreams(all.mcpUpstreams);
     return all;
   }
 
@@ -202,8 +232,8 @@ function createBridgeServer(options = {}) {
     const flat = Object.fromEntries(Object.entries(applied).filter(([, v]) => v !== null));
     if (Object.keys(flat).length) configStore.patch(flat);
     ai.loadConfig();
-    if (id != null) reply(ws, id, { patch: { ...flat, ...Object.fromEntries(removals.map((k) => [k, null])) } });
-    toUi('settings.changed', { patch });
+    if (id != null) reply(ws, id, { patch: redactPatch({ ...flat, ...Object.fromEntries(removals.map((k) => [k, null])) }) });
+    toUi('settings.changed', { patch: redactPatch(patch) });
   }
 
   function startChat(ws, msg) {
@@ -393,7 +423,13 @@ function createBridgeServer(options = {}) {
       case 'settings.set':
         applySettings(ws, msg);
         if (msg.patch && Object.hasOwn(msg.patch, 'mcpUpstreams')) {
-          toUi('mcp.status', { servers: upstreamServers() });
+          if (mcpClient) {
+            Promise.resolve(mcpClient.reload()).catch((err) => {
+              log.warn('bridge: mcp upstream reload failed:', err.message);
+            });
+          } else {
+            toUi('mcp.status', { servers: upstreamServers() });
+          }
         }
         return;
       case 'mcp.servers.get':
@@ -463,6 +499,11 @@ function createBridgeServer(options = {}) {
     isBodyConnected,
     say,
     setMcpStatus,
+    setUpstreamStatus,
+    attachMcpClient(client) {
+      mcpClient = client || null;
+      setUpstreamStatus(upstreamServers());
+    },
     setRoamEnabled(enabled) {
       return setRoamEnabled(enabled);
     },
