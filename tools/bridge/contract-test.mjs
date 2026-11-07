@@ -179,6 +179,7 @@ const fixtures = {
   'chat.delta': [{ form: 'event', msg: evt('chat.delta', { text: 'hel' }) }],
   'chat.done': [{ form: 'event', msg: evt('chat.done', { full: 'hello' }) }],
   'chat.error': [{ form: 'event', msg: evt('chat.error', { error: 'upstream failed' }) }],
+  'chat.abort': [{ form: 'event', msg: evt('chat.abort') }],
   'settings.get': [
     { form: 'request', msg: req(5, 'settings.get') },
     { form: 'reply', replyFor: 'settings.get', msg: rep(5, { patch: { roamEnabled: true } }) },

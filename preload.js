@@ -74,6 +74,49 @@ function flushQueue() {
   for (const message of queued) rawSend(message);
 }
 
+// One-time hand-off of the v1.5.2 renderer localStorage into the daemon config
+// so the browser UI (issue #12) starts with the same keys without changing the
+// Electron renderer, which keeps reading localStorage.
+function migrateSettings() {
+  const marker = 'aurapet_ui_migrated';
+  try {
+    if (localStorage.getItem(marker) === '1') return;
+  } catch {
+    return;
+  }
+  const defaults = {
+    aurapet_skin: 'cat2d',
+    aurapet_name: '條碼',
+    aurapet_user_title: '主人',
+    aurapet_sound: 'true',
+    aurapet_speech: 'true',
+    aurapet_affection: '40',
+    aurapet_energy: '40',
+    aurapet_posture: 'sit',
+    aurapet_hidden_skins: '[]',
+    aurapet_custom_frame: 'aura-contour',
+    aurapet_pet_species: '',
+    aurapet_pet_habits: '',
+    aurapet_ai_provider: 'builtin',
+    aurapet_api_key: '',
+    aurapet_base_url: '',
+    aurapet_model_name: ''
+  };
+  const patch = {};
+  for (const [key, fallback] of Object.entries(defaults)) {
+    const current = localStorage.getItem(key);
+    patch[key] = current === null ? fallback : current;
+  }
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith('aurapet_') && key !== marker && !(key in patch)) {
+      patch[key] = localStorage.getItem(key);
+    }
+  }
+  request('settings.set', { patch }).catch(() => {});
+  localStorage.setItem(marker, '1');
+}
+
 function handleReply(message) {
   if (message.id === helloId) {
     helloId = null;
@@ -81,6 +124,7 @@ function handleReply(message) {
       connected = true;
       reconnectDelay = 1000;
       flushQueue();
+      migrateSettings();
     } else {
       socket.close();
     }

@@ -12,6 +12,7 @@ extends Node2D
 
 const PROTOCOL_VERSION := 1
 const DEFAULT_PORT := 47821
+const DEFAULT_UI_PORT := 47830
 const PET_SIZE := Vector2i(240, 290)
 const CHAT_SIZE := Vector2i(460, 680)
 const ROAM := {"minDistance": 110, "speed": 78.0, "tick": 0.033}
@@ -30,6 +31,7 @@ var font: SystemFont
 var config_path := ""
 var token := ""
 var port := DEFAULT_PORT
+var ui_port := DEFAULT_UI_PORT
 var lowproc := false
 var fixed_rate := 0.0
 var force_walk := false
@@ -126,6 +128,8 @@ func _parse_args() -> void:
 			token = a.substr(8)
 		elif a.begins_with("--port="):
 			port = int(a.substr(7))
+		elif a.begins_with("--ui-port="):
+			ui_port = int(a.substr(10))
 		elif a == "--lowproc":
 			lowproc = true
 		elif a.begins_with("--rate="):
@@ -237,6 +241,7 @@ func _setup_tray() -> void:
 	tray_menu.add_separator(tray_rid)
 	tray_menu.add_item(tray_rid, "撫摸寵物 ❤", Callable(self, "_tray_pat"))
 	tray_menu.add_item(tray_rid, "餵食美味小點心 🍣", Callable(self, "_tray_feed"))
+	tray_menu.add_item(tray_rid, "開啟對話／設定", Callable(self, "_open_ui"))
 	tray_menu.add_separator(tray_rid)
 	tray_menu.add_item(tray_rid, "徹底退出 AuraPet (結束後台)", Callable(self, "_tray_quit"))
 	var icon := load("res://icon.png") as Texture2D
@@ -259,6 +264,7 @@ func _spawn_tray_helper() -> void:
 	tray_pid = OS.create_process("python3", PackedStringArray([
 		script,
 		"--port=%d" % port,
+		"--ui-port=%d" % ui_port,
 		"--config=%s" % config_path,
 		"--icon=%s" % icon,
 		"--parent-pid=%d" % OS.get_process_id()
@@ -306,6 +312,10 @@ func _tray_feed() -> void:
 
 func _tray_quit() -> void:
 	_quit()
+
+func _open_ui() -> void:
+	OS.shell_open("http://127.0.0.1:%d/?token=%s" % [ui_port, token])
+	print("ui: open http://127.0.0.1:%d/" % ui_port)
 
 func _sync_tray_checks() -> void:
 	if tray_menu == null or not tray_rid.is_valid():

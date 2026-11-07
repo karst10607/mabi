@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { createConfigStore } = require('./daemon/config-store');
 const { createBridgeServer } = require('./daemon/bridge-server');
+const { createUiServer, DEFAULT_UI_PORT } = require('./daemon/ui-server');
 
 app.commandLine.appendSwitch('disable-domain-blocking-for-3d-apis');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
@@ -46,6 +47,7 @@ let roaming = false;
 let lastWalkFrameAt = 0;
 let clickThrough = false;
 let bridge = null;
+let uiServer = null;
 
 const configStore = createConfigStore({ dir: app.getPath('userData') });
 
@@ -716,6 +718,15 @@ if (!app.requestSingleInstanceLock()) {
       logCrash(`bridge server failed to start: ${err.message}`);
       console.warn('Bridge server failed to start:', err.message);
     });
+    uiServer = createUiServer({
+      configStore,
+      token: bridge.token,
+      bridgePort: bridge.port,
+      port: Number(configStore.get('uiPort')) || DEFAULT_UI_PORT
+    });
+    uiServer.start().catch((err) => {
+      console.warn('UI server failed to start:', err.message);
+    });
     createMainWindow();
     createTray();
     registerShortcuts();
@@ -729,6 +740,7 @@ if (!app.requestSingleInstanceLock()) {
 app.on('before-quit', () => {
   stopWalk();
   if (currentMode === 'pet') savePetPosition();
+  if (uiServer) uiServer.stop();
   if (bridge) bridge.stop();
 });
 

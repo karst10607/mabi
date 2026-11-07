@@ -10,6 +10,7 @@ the WS bridge (#10) and the Godot body (#11) land later.
 | --- | --- | --- |
 | `config-store.js` | Node only | Single writer for `app-settings.json`: atomic write (tmp + rename + fsync), `0600` mode, one-time `.bak` of the pre-migration file. Same flat schema as v1.5.2 plus `schemaVersion`. Also stores the bridge `bridgeToken` (0600). |
 | `bridge-server.js` | Node only (`ws`) | Body↔daemon WS server, protocol v1 subset: hello/token, state.sync, mode, window, roam, interaction/react, ui.busy, ping. Owns brain state (mode, roam schedule) and validates the loopback token. |
+| `ui-server.js` | Node only | Serves the existing renderer DOM as an on-demand localhost page (bridge token required, cookie/query), reusing `renderer/` and injecting the config snapshot for the browser shim. |
 | `pet-state.js` | UMD (Node + browser) | Pure pet-state rules: affection/energy clamps, 10-point energy floor, posture order, pat/feed/play wake-up, idle → doze/sleep drift. No DOM, no storage, no timers. |
 | `ai-service.js` | UMD (Node + browser) | AI provider clients (builtin/openai/gemini/claude/ollama/custom). Config is read through an injected adapter (`get(key)` / `set(key, value)`), never through a global directly. |
 
@@ -58,6 +59,16 @@ The renderer currently passes a localStorage adapter (default when
 `localStorage` exists), which keeps v1.5.2 behaviour byte-for-byte. Issue #12
 moves chat/settings to a daemon-served page and swaps in the file-backed
 adapter with a one-time localStorage migration.
+
+## UI face (issue #12)
+
+`ui-server.js` binds `127.0.0.1:47830` (config `uiPort`), requires the bridge
+token on `/` (`?token=…` → HttpOnly cookie) and serves the existing renderer
+DOM plus `ui/ui-bridge.js`. The page is a `ui` WS client: chat streaming and
+settings go through `chat.send` / `chat.delta` / `chat.done` / `chat.error` /
+`chat.abort` and `settings.get` / `settings.set` / `settings.changed`.
+`AIService` runs in the daemon with the file-backed config store; the browser
+only renders. Closing the page removes its WS and renderer.
 
 ## Config file
 

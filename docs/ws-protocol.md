@@ -1,7 +1,8 @@
 # AuraPet Bridge Protocol（WS）v0.1
 
 Status：**CANDIDATE**。機器可讀契約與 contract test 已落地（見第 6 節）；Godot body v0
-（`godot/`，issue #11）已實作 body 端，Node daemon 仍嵌在 Electron main（#12／#15 抽出）。
+（`godot/`，issue #11）已實作 body 端，chat／settings 由 daemon 的 localhost UI 頁
+（`ui/`，issue #12）以 `ui` 角色承載，Node daemon 仍嵌在 Electron main（#15 抽出）。
 兩端正式拆分後升 v1.0／FROZEN。凍結後同 v 只允许 additive 變更
 （新增訊息／新增欄位），breaking 變更一律 v+1。
 
@@ -91,6 +92,7 @@ shape **绝不對外暴露、也不承載 MCP 訊息**。daemon 內部負責翻�
 | --- | --- | --- | --- |
 | chat.send | ui→brain | text | 送 LLM（ai-service 住 brain） |
 | chat.delta / chat.done / chat.error | brain→ui | text / full / error | streaming 回覆 |
+| chat.abort | ui→brain | — | 中止目前串流；brain 回 chat.done（已產生的 full） |
 | settings.get / settings.set | ui↔brain | (id) / patch | 設定讀寫；brain 廣播 settings.changed |
 | settings.changed | brain→ui | patch | 廣播 |
 

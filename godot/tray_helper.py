@@ -19,6 +19,8 @@ import struct
 import sys
 import threading
 import time
+import webbrowser
+from urllib.parse import quote
 
 import gi
 
@@ -189,6 +191,10 @@ class TrayApp:
             {"t": "interaction", "kind": "feed", "source": "tray"}))
         menu.append(item)
         menu.append(Gtk.SeparatorMenuItem())
+        item = Gtk.MenuItem(label="開啟對話／設定")
+        item.connect("activate", lambda _i: self.open_ui())
+        menu.append(item)
+        menu.append(Gtk.SeparatorMenuItem())
         item = Gtk.MenuItem(label="徹底退出 AuraPet (結束後台)")
         item.connect("activate", lambda _i: self.bridge.send({"t": "window.close"}))
         menu.append(item)
@@ -223,6 +229,9 @@ class TrayApp:
         if self.updating:
             return
         self.bridge.send({"t": "roam.set-enabled", "enabled": item.get_active()})
+
+    def open_ui(self):
+        webbrowser.open(f"http://127.0.0.1:{self.args.ui_port}/?token={quote(self.args.token)}")
 
     def on_ready(self):
         print("tray-helper: connected", flush=True)
@@ -262,6 +271,7 @@ def read_token(path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=47821)
+    parser.add_argument("--ui-port", type=int, default=47830)
     parser.add_argument("--config", required=True)
     parser.add_argument("--icon", default="")
     parser.add_argument("--parent-pid", type=int, default=0)

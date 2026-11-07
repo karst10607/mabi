@@ -112,6 +112,11 @@ Epic #7 的 body 實作在 `godot/`：透明視窗、rig、tray、roam 改由 Go
 `docs/ws-protocol.md` 連 Node daemon。Godot 4.7.2 binary 不進 repo；啟動方式、Linux tray
 helper（Ayatana AppIndicator）與 CPU/RSS 量測見 `godot/README.md`。
 
+### 6. 按需 chat／設定頁（localhost）
+daemon 在 `http://127.0.0.1:47830/` 提供現有 chat／設定 DOM（需 bridge token；tray
+「開啟對話／設定」會帶 token 開啟）。頁面關閉即零成本，設定與聊天都走 WS；舊 Electron
+`localStorage` 會在升級後一次性遷進 daemon config。細節見 `ui/README.md`。
+
 ---
 
 ## 📂 專案檔案結構
@@ -124,6 +129,7 @@ mabi/
 ├── preload.js            # 安全的 ContextBridge API 注入
 ├── daemon/               # brain 模組：config store、pet state、AI service、WS bridge
 ├── godot/                # Godot body v0：透明視窗、rig、tray helper、probe
+├── ui/                   # 按需 chat／設定頁的瀏覽器 shim
 ├── tools/bridge/         # 協議 schema、contract test、headless dev brain
 ├── assets/               # 托盤圖示 (macOS template PNG + Win/Linux 彩色 PNG)
 ├── build/icon.png        # 應用程式圖示 (electron-builder 會轉成 .icns/.ico)

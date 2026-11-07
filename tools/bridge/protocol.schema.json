@@ -313,6 +313,10 @@
         "error": { "type": "string", "minLength": 1 }
       }
     },
+    "chat.abort": {
+      "dir": ["ui>brain"],
+      "forms": ["event"]
+    },
     "settings.get": {
       "dir": ["ui>brain"],
       "forms": ["request"],

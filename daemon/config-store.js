@@ -110,6 +110,29 @@ function createConfigStore(options = {}) {
 
     set(key, value) {
       return store.patch({ [key]: value });
+    },
+
+    /** Remove keys (used by the UI "restore defaults" action). */
+    remove(keys) {
+      const list = Array.isArray(keys) ? keys : [keys];
+      const next = { ...data };
+      let changed = false;
+      for (const key of list) {
+        if (Object.hasOwn(next, key)) {
+          delete next[key];
+          changed = true;
+        }
+      }
+      if (!changed) return store.getAll();
+      next.schemaVersion = SCHEMA_VERSION;
+      ensureMigrationBackup();
+      try {
+        writeFileAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
+        data = next;
+      } catch (err) {
+        console.warn('Could not save app settings:', err.message);
+      }
+      return store.getAll();
     }
   };
 

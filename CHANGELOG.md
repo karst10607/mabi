@@ -2,6 +2,20 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.7.0] - 2026-11-07
+
+### Added
+
+- **按需 chat／設定頁（Epic #7 / #12）**：daemon 新增 `daemon/ui-server.js`，在 `127.0.0.1:47830`（可用 config `uiPort` 覆寫）以 bridge token 提供現有 `renderer/` 的 chat／設定 DOM；頁面關閉即無 renderer。`ui/ui-bridge.js` 把 `localStorage`、`window.electronAPI` 與 `AIService` 接到 WS。
+- **daemon 的 chat／settings face**：`chat.send`／`chat.delta`／`chat.done`／`chat.error`／`chat.abort` 與 `settings.get`／`settings.set`／`settings.changed`；`AIService` 改在 daemon 以檔案 config 執行，串流與中止都不再經過 renderer。
+- **設定遷移**：Electron 首次連上 bridge 時把舊 `localStorage` 的 `aurapet_*`（含缺省值）一次性寫入 daemon config（`settings.set`），舊 renderer 行為不變。
+- Godot body tray 新增「開啟對話／設定」，Linux helper 以 `--ui-port` 帶 token 開啟頁面。
+
+### Changed
+
+- `config-store.js` 新增 `remove(keys)`，供 UI 恢復預設時刪除鍵。
+- 協議 v1 新增 additive 的 `chat.abort`（schema／docs／fixture 同步，contract test 14/14）。
+
 ## [1.6.0] - 2026-11-07
 
 ### Added
