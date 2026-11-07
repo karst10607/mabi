@@ -68,3 +68,43 @@ window.electronAPI.closeApp();     // 之後 __vis 應有 false、rig2d.running 
 - 閃爍不是 renderer 造成的：兩段各 90 秒、4Hz 的 `shot.mjs` 迴圈（714 幀）沒有壞幀。
 - 帶 `--remote-debugging-port` 時 GPU helper 會飆到 150–200%，那是 CDP 的代價，
   量 CPU 請改用 `npm start`，量畫面才用 CDP。
+
+## Linux 實測（2026-11-07，Vega 8／Linux Mint／X11／ANGLE OpenGL 4.6 radeonsi）
+
+方法：`bench-ab.sh`（idle 10s、walk 20s，/proc utime+stime 差分，**序列**跑避免互相污染）。
+walk 靠 main.js 暫存 env hook（`AURAPET_BENCH=walk` 連續漫遊、直接設 `roamEnabled` 不寫設定檔）
+觸發，腳本結束還原。量 CPU 不帶 CDP（代價見上）。變體：V1 `antialias:false`、V2 pixelRatio
+cap 1、V3 `preserveDrawingBuffer:false`、V4 `IDLE_FRAME_MS 200`、V5 CSS 動畫 `steps(28)`、
+V6 CSS 動畫 none、V9 量化 idle skip＋idle burst 20fps（patch 存 `v9-idle-skip.patch`）。
+
+| 變體 | idle GPU／renderer | walk GPU／renderer |
+| --- | --- | --- |
+| V0 baseline | 27%／9% | 43%／19% |
+| V1 | 28%／10% | 41%／18% |
+| V2 | 30%／12% | 40%／17% |
+| V3 | 30%／11% | 40%／18% |
+| V4 | 28%／9% | 40%／18% |
+| V5 | 30%／10% | 40%／18% |
+| V6 | 28%／9% | 42%／20% |
+| V9 | 24%／8% | 40%／17% |
+
+**全在 ±3pp 噪聲內，無贏家**（dpr=1，V2 在此為 no-op；HiDPI 才有意義）。
+
+隔离鏈（找出成本在哪）：
+
+- `probe.py`：idle 實際繪製率 14/s（fast 7.7＋slow 6.3），與 Mac 優化後同級；
+  `needsFastFrame` 沒有卡死。
+- park（停繪、視窗可見、DOM 計時器活著）＝0%；hide＝0% → 成本完全隨內容走。
+- V7 強制 1fps＝0%；**V8 canvas `display:none` 但照 14fps 繪製＝0%** → GL draw 本身免費，
+  成本在「每次 canvas damage 觸發的透明視窗 composite」，約 19ms CPU／次（27% ÷ 14/s）。
+- WebGL renderer 字串確認硬體：`ANGLE (AMD, Vega 8, radeonsi raven ACO, OpenGL 4.6)`，
+  非 SwiftShader／llvmpipe。
+- `flicker.py` 30s 120 幀 blanks=0、median 非透明率 0.285（工具驗證＋V0 空白幀 baseline）。
+
+結論：此 X11＋ANGLE stack 上 alpha WebGL canvas 的 per-damage composite 是 idle 地板；
+renderer flags 與 idle 幀預算都動不了它。再降要嘛犧牲 ambient 生動感換 damage rate（產品決策），
+要嘛繞開 Chromium composite（native／Godot）；Tauri 不解（同一套 Chromium composite）。
+v1.5.2 的硬體加速修正仍是最大贏（342% → 這個地板）。
+
+新工具：`bench-ab.sh`（Linux A/B）、`flicker.py`／`probe.py`（純標準庫 WebSocket client，
+Node 18 無全域 WebSocket、環境無 ws 模組時的替代）、`flicker-ab.sh`（V0／V3／WIN 閃爍 A/B）。

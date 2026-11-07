@@ -1,0 +1,46 @@
+diff --git a/renderer/rig2d.js b/renderer/rig2d.js
+index ca9d75d..43d6945 100644
+--- a/renderer/rig2d.js
++++ b/renderer/rig2d.js
+@@ -158,6 +158,10 @@ const DEFAULT_GAIT = {
+ // nothing needs 30 fps while it only ambles. Ambient life draws at ~9 fps and any
+ // easing still in flight asks for the fast rate.
+ const ACTIVE_FRAME_MS = 30;
++// Idle easings (blink, ear flick, gaze saccades) stay smooth at 20 fps; only the
++// walking gait needs the full 30. Every canvas damage costs a composite of the
++// transparent window, so idle burst rate is a real CPU lever on weak iGPUs.
++const BURST_FRAME_MS = 50;
+ const IDLE_FRAME_MS = 110;
+ 
+ export class PetRig2D {
+@@ -642,6 +646,20 @@ export class PetRig2D {
+     u.uGaze.value.set(gx, gy);
+     u.uAlpha.value = p.alpha;
+ 
++    // Event-driven idle: a slow frame only redraws when the quantized ambient
++    // pose actually changed. Each WebGL draw damages the canvas and forces a
++    // composite of the transparent window (~2% GPU-process CPU per damage on
++    // Vega 8 / X11 / ANGLE), so sub-quantum breath drift must not cost a frame.
++    // 0.05 steps are sub-pixel at the pet's render size; easings in flight bypass
++    // the skip via needsFastFrame() and stay smooth.
++    const q = (v) => Math.round(v * 20);
++    const sig = q(u.uBreath.value) + ',' + q(u.uTailSway.value) + ',' +
++      q(u.uEarAngleL.value) + ',' + q(u.uEarAngleR.value) + ',' +
++      q(u.uPawAngleL.value) + ',' + q(u.uPawAngleR.value) + ',' +
++      q(u.uGaze.value.x) + ',' + q(u.uGaze.value.y) + ',' + q(u.uEyeOpen.value);
++    if (!this.needsFastFrame() && sig === this.lastIdleSig) return;
++    this.lastIdleSig = sig;
++
+     this.renderer.render(this.scene, this.camera);
+   }
+ 
+@@ -652,7 +670,8 @@ export class PetRig2D {
+     this.clock = now;
+     this.t += dt;
+     if (this.ready) this.stepAndRender(dt);
+-    this.schedule(this.needsFastFrame() ? ACTIVE_FRAME_MS : IDLE_FRAME_MS);
++    const walking = this.stepAmp > 0.004 || this.stepAmpTarget > 0;
++    this.schedule(this.needsFastFrame() ? (walking ? ACTIVE_FRAME_MS : BURST_FRAME_MS) : IDLE_FRAME_MS);
+   }
+ 
+   dispose() {
