@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, globalShortcut, screen, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { createConfigStore } = require('./daemon/config-store');
 
 app.commandLine.appendSwitch('disable-domain-blocking-for-3d-apis');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
@@ -48,23 +49,14 @@ let roaming = false;
 let uiBusy = false;
 let lastWalkFrameAt = 0;
 
-const APP_SETTINGS_FILE = () => path.join(app.getPath('userData'), 'app-settings.json');
+const configStore = createConfigStore({ dir: app.getPath('userData') });
 
 function readAppSettings() {
-  try {
-    return JSON.parse(fs.readFileSync(APP_SETTINGS_FILE(), 'utf8')) || {};
-  } catch {
-    return {};
-  }
+  return configStore.getAll();
 }
 
 function writeAppSettings(patch) {
-  try {
-    fs.mkdirSync(path.dirname(APP_SETTINGS_FILE()), { recursive: true });
-    fs.writeFileSync(APP_SETTINGS_FILE(), JSON.stringify({ ...readAppSettings(), ...patch }, null, 2));
-  } catch (err) {
-    console.warn('Could not save app settings:', err.message);
-  }
+  configStore.patch(patch);
 }
 
 function defaultPetPosition() {

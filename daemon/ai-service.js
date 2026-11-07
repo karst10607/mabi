@@ -1,19 +1,27 @@
 /**
- * AuraPet - AI Service Provider (OpenAI, Gemini, Claude, Ollama, Custom & Built-in Smart Fallback)
+ * AuraPet daemon - AI service provider (OpenAI, Gemini, Claude, Ollama, Custom
+ * & built-in smart fallback).
+ *
+ * Storage is injected as a tiny config-store adapter (`get(key)` / `set(key,
+ * value)`), so this module never touches a browser global directly. The
+ * renderer passes a localStorage adapter for now (v1.5.2 behavior); the daemon's
+ * chat face will pass the file-backed config store instead.
  */
 
 class AIService {
-  constructor() {
+  constructor(options = {}) {
+    this.store = options.store || AIService.defaultStore();
     this.currentAbortController = null;
     this.loadConfig();
   }
 
   loadConfig() {
-    this.provider = localStorage.getItem('aurapet_ai_provider') || 'builtin';
-    this.apiKey = localStorage.getItem('aurapet_api_key') || '';
-    this.baseUrl = localStorage.getItem('aurapet_base_url') || '';
-    this.modelName = localStorage.getItem('aurapet_model_name') || '';
-    this.systemPrompt = localStorage.getItem('aurapet_system_prompt') || 
+    const store = this.store;
+    this.provider = store.get('aurapet_ai_provider') || 'builtin';
+    this.apiKey = store.get('aurapet_api_key') || '';
+    this.baseUrl = store.get('aurapet_base_url') || '';
+    this.modelName = store.get('aurapet_model_name') || '';
+    this.systemPrompt = store.get('aurapet_system_prompt') || 
       '你是 AuraPet，一隻活潑可愛、富有智慧且溫暖治癒的 AI 桌面寵物夥伴。你對主人充滿忠誠與關懷，說話親切活潑，善於用生動且結構清晰的語言（搭配可愛 emoji）解答問題、撰寫代碼、整理資訊與提供情緒陪伴。';
   }
 
@@ -24,15 +32,15 @@ class AIService {
     this.modelName = config.modelName || '';
     this.systemPrompt = config.systemPrompt || '';
 
-    localStorage.setItem('aurapet_ai_provider', this.provider);
-    localStorage.setItem('aurapet_api_key', this.apiKey);
-    localStorage.setItem('aurapet_base_url', this.baseUrl);
-    localStorage.setItem('aurapet_model_name', this.modelName);
-    localStorage.setItem('aurapet_system_prompt', this.systemPrompt);
+    this.store.set('aurapet_ai_provider', this.provider);
+    this.store.set('aurapet_api_key', this.apiKey);
+    this.store.set('aurapet_base_url', this.baseUrl);
+    this.store.set('aurapet_model_name', this.modelName);
+    this.store.set('aurapet_system_prompt', this.systemPrompt);
   }
 
   get userTitle() {
-    return localStorage.getItem('aurapet_user_title') || '主人';
+    return this.store.get('aurapet_user_title') || '主人';
   }
 
   buildSystemPrompt() {
@@ -385,4 +393,42 @@ class AIService {
   }
 }
 
-window.AIService = AIService;
+/** Config-store adapter over a Storage-like object (localStorage in the renderer). */
+AIService.localStorageStore = function localStorageStore(storage) {
+  return {
+    get(key) {
+      try {
+        return storage.getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    set(key, value) {
+      try {
+        storage.setItem(key, value);
+      } catch {
+        /* quota/privacy mode: keep the in-memory value only */
+      }
+    }
+  };
+};
+
+/** Headless fallback so the daemon face can construct the service before wiring config. */
+AIService.memoryStore = function memoryStore() {
+  const values = new Map();
+  return {
+    get: (key) => (values.has(key) ? values.get(key) : null),
+    set: (key, value) => values.set(key, value)
+  };
+};
+
+AIService.defaultStore = function defaultStore() {
+  if (typeof localStorage !== 'undefined') return AIService.localStorageStore(localStorage);
+  return AIService.memoryStore();
+};
+
+if (typeof module === 'object' && module.exports) {
+  module.exports = AIService;
+} else {
+  window.AIService = AIService;
+}
