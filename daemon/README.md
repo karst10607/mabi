@@ -120,7 +120,16 @@ lists servers:
       "url": "http://127.0.0.1:41184/mcp", "token": "<api.token>", "tokenIn": "query" },
     // any stdio MCP server
     { "name": "obsidian", "transport": "stdio",
-      "command": "npx", "args": ["-y", "mcp-obsidian"], "env": { "OBSIDIAN_API_KEY": "<key>" } }
+      "command": "npx", "args": ["-y", "mcp-obsidian"], "env": { "OBSIDIAN_API_KEY": "<key>" } },
+    // Jira stdio MCP server (issue #32)
+    { "name": "jira", "transport": "stdio",
+      "command": "npx", "args": ["-y", "@modelcontextprotocol/server-jira"],
+      "env": {
+        "JIRA_URL": "https://your-domain.atlassian.net",
+        "JIRA_EMAIL": "your-email@example.com",
+        "JIRA_API_TOKEN": "<api-token>"
+      }
+    }
   ]
 }
 ```

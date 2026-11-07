@@ -2,6 +2,14 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.13.0] - 2026-11-08
+
+### Added
+
+- **Jira MCP 上游支援（#32）**：擴充 `daemon/mcp-client.js`，支援 Jira MCP 工具（如 `@modelcontextprotocol/server-jira` 等 stdio 傳輸模式）。`extractItems` 支援 Jira Issue 結構解析（`issues` 陣列、`key`、`fields.summary`、`fields.status.name` 與 `fields.description`），並在 `pickSearchTool` 支援 `jira_search` 與 JQL 查詢適配。
+- 支援 Jira 憑證遮罩（`JIRA_API_TOKEN`、`JIRA_URL`、`JIRA_EMAIL` 等），保證不洩漏至日誌、WS 廣播與 MCP 響應中。
+- 擴充 `tools/mcp/smoke-test.mjs`，包含完整的 Jira MCP stdio Mock 上游測試（驗證命名空間 `jira.jira_search`、`jira.get_issue` 與 Token 遮罩）。
+
 ## [1.12.0] - 2026-11-07
 
 ### Removed

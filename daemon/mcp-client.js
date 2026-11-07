@@ -1,9 +1,10 @@
 /**
- * AuraPet daemon - upstream MCP client face (issue #13).
+ * AuraPet daemon - upstream MCP client face (issue #13 / #32).
  *
- * The daemon is an MCP *client* for note servers the user already runs:
+ * The daemon is an MCP *client* for servers the user already runs:
  * Obsidian (Local REST API / mcp-obsidian), Joplin (built-in `POST /mcp` or a
- * community stdio server) and Notion (official MCP). Two transports:
+ * community stdio server), Notion (official MCP) and Jira (official or community
+ * stdio / HTTP server). Two transports:
  *
  *   - streamable-http: `@modelcontextprotocol/sdk` StreamableHTTPClientTransport
  *   - stdio:           `@modelcontextprotocol/sdk` StdioClientTransport
@@ -132,7 +133,7 @@ function withTimeout(promise, ms, message) {
 
 function pickSearchTool(tools) {
   if (!Array.isArray(tools)) return null;
-  const patterns = [/^search$/i, /search/i, /find/i, /query/i];
+  const patterns = [/^search$/i, /search/i, /find/i, /query/i, /jira_search/i, /issues/i];
   for (const pattern of patterns) {
     const hit = tools.find((tool) => tool && typeof tool.name === 'string' && pattern.test(tool.name));
     if (hit) return hit;
@@ -143,16 +144,26 @@ function pickSearchTool(tools) {
 function searchArgumentName(tool) {
   const props = tool?.inputSchema?.properties;
   if (!props || typeof props !== 'object') return 'query';
+  if (Object.hasOwn(props, 'jql')) return 'jql';
   if (Object.hasOwn(props, 'query')) return 'query';
   if (Object.hasOwn(props, 'q')) return 'q';
   if (Object.hasOwn(props, 'text')) return 'text';
+  if (Object.hasOwn(props, 'search')) return 'search';
   return 'query';
 }
 
 function buildSearchArguments(tool, query, limit) {
-  const args = { [searchArgumentName(tool)]: query };
+  const argName = searchArgumentName(tool);
+  let val = query;
+  if (argName === 'jql' && query && !query.includes('=') && !query.includes('~')) {
+    val = `text ~ "${query.replace(/"/g, '\\"')}"`;
+  }
+  const args = { [argName]: val };
   const props = tool?.inputSchema?.properties;
-  if (!props || typeof props !== 'object' || Object.hasOwn(props, 'limit')) args.limit = limit;
+  if (props && typeof props === 'object') {
+    if (Object.hasOwn(props, 'limit')) args.limit = limit;
+    if (Object.hasOwn(props, 'maxResults')) args.maxResults = limit;
+  }
   return args;
 }
 
@@ -191,21 +202,37 @@ function extractItems(text) {
         ? parsed.notes
         : Array.isArray(parsed?.items)
           ? parsed.items
-          : null;
+          : Array.isArray(parsed?.issues)
+            ? parsed.issues
+            : null;
   if (!list) {
     const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 240);
     return snippet ? [{ title: '', snippet }] : [];
   }
   return list
     .filter((item) => isPlainObject(item))
-    .map((item) => ({
-      title: String(item.title ?? item.name ?? item.path ?? ''),
-      snippet: String(item.snippet ?? item.excerpt ?? item.body ?? item.content ?? item.text ?? '')
+    .map((item) => {
+      const key = typeof item.key === 'string' ? item.key : '';
+      const fields = isPlainObject(item.fields) ? item.fields : {};
+      const rawTitle = item.title ?? item.name ?? item.path ?? fields.summary ?? key ?? '';
+      const title = key && rawTitle !== key ? `[${key}] ${rawTitle}` : String(rawTitle);
+
+      const statusStr = fields.status?.name ? `(${fields.status.name}) ` : '';
+      const rawSnippet = item.snippet ?? item.excerpt ?? item.body ?? item.content ?? item.text ?? fields.description ?? '';
+      const snippet = (statusStr + String(rawSnippet))
         .replace(/\s+/g, ' ')
-        .slice(0, 240),
-      ...(item.id ? { id: String(item.id) } : {}),
-      ...(item.url || item.link ? { url: String(item.url ?? item.link) } : {})
-    }));
+        .slice(0, 240);
+
+      const id = item.id ? String(item.id) : (key || undefined);
+      const url = item.url || item.link || item.self || undefined;
+
+      return {
+        title,
+        snippet,
+        ...(id ? { id } : {}),
+        ...(url ? { url: String(url) } : {})
+      };
+    });
 }
 
 function createMcpClient(options = {}) {
