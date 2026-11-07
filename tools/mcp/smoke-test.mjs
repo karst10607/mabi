@@ -231,6 +231,83 @@ process.stdin.on('end', () => process.exit(0));
   return script;
 }
 
+function writeFakeJiraServer() {
+  const script = path.join(root, 'fake-jira-server.cjs');
+  fs.writeFileSync(script, `'use strict';
+const readline = require('readline');
+const send = (message) => process.stdout.write(JSON.stringify(message) + '\\n');
+const rl = readline.createInterface({ input: process.stdin });
+rl.on('line', (line) => {
+  let message;
+  try { message = JSON.parse(line); } catch { return; }
+  const hasId = Object.hasOwn(message, 'id');
+  switch (message.method) {
+    case 'initialize':
+      send({ jsonrpc: '2.0', id: message.id, result: {
+        protocolVersion: '2025-06-18',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'jira-mock', version: '1.0.0' }
+      } });
+      return;
+    case 'notifications/initialized':
+      return;
+    case 'tools/list':
+      send({ jsonrpc: '2.0', id: message.id, result: { tools: [
+        {
+          name: 'jira_search',
+          description: 'Search Jira issues using JQL or text query',
+          inputSchema: { type: 'object', properties: { jql: { type: 'string' }, maxResults: { type: 'integer' } }, required: ['jql'] }
+        },
+        {
+          name: 'get_issue',
+          description: 'Retrieve a Jira issue by key or id',
+          inputSchema: { type: 'object', properties: { issueIdOrKey: { type: 'string' } }, required: ['issueIdOrKey'] }
+        }
+      ] } });
+      return;
+    case 'tools/call':
+      if (message.params?.name === 'jira_search') {
+        send({ jsonrpc: '2.0', id: message.id, result: { content: [{
+          type: 'text',
+          text: JSON.stringify({
+            issues: [
+              {
+                id: '2001',
+                key: 'PROJ-99',
+                self: 'https://jira.example.com/browse/PROJ-99',
+                fields: {
+                  summary: 'Sprint item for cat pet',
+                  status: { name: 'In Progress' },
+                  description: 'Implement Jira integration'
+                }
+              }
+            ]
+          })
+        }] } });
+        return;
+      }
+      if (message.params?.name === 'get_issue') {
+        send({ jsonrpc: '2.0', id: message.id, result: { content: [{
+          type: 'text',
+          text: JSON.stringify({
+            id: '2001',
+            key: message.params?.arguments?.issueIdOrKey || 'PROJ-99',
+            fields: { summary: 'Issue detail' }
+          })
+        }] } });
+        return;
+      }
+      send({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'tool not found' } });
+      return;
+    default:
+      if (hasId) send({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'method not found' } });
+  }
+});
+process.stdin.on('end', () => process.exit(0));
+`);
+  return script;
+}
+
 async function main() {
   bridge = createBridgeServer({ configStore: store, port: 0, brainVersion: 'smoke', log: quiet });
   await bridge.start();
@@ -376,11 +453,24 @@ async function main() {
   upstream = await startFakeUpstream();
   const upstreamUrl = `http://127.0.0.1:${upstream.address().port}/mcp`;
   const stdioScript = writeFakeStdioServer();
+  const jiraScript = writeFakeJiraServer();
   const upstreamToken = 'smoke-upstream-token-value';
+  const jiraSecretToken = 'super-secret-jira-token-9999';
   store.patch({
     mcpUpstreams: [
       { name: 'fake-notes', url: upstreamUrl, transport: 'streamable-http', token: upstreamToken },
-      { name: 'stdio-notes', transport: 'stdio', command: process.execPath, args: [stdioScript] }
+      { name: 'stdio-notes', transport: 'stdio', command: process.execPath, args: [stdioScript] },
+      {
+        name: 'jira',
+        transport: 'stdio',
+        command: process.execPath,
+        args: [jiraScript],
+        env: {
+          JIRA_URL: 'https://test.atlassian.net',
+          JIRA_EMAIL: 'user@test.com',
+          JIRA_API_TOKEN: jiraSecretToken
+        }
+      }
     ]
   });
   await mcpClient.reload();
@@ -388,12 +478,15 @@ async function main() {
   const upstreamStatus = mcpClient.getServers();
   check('http upstream reaches ready', upstreamStatus.find((s) => s.name === 'fake-notes')?.state === 'ready');
   check('stdio upstream reaches ready', upstreamStatus.find((s) => s.name === 'stdio-notes')?.state === 'ready');
-  check('status reports real tool counts', upstreamStatus.every((s) => s.toolCount === 1), JSON.stringify(upstreamStatus.map((s) => s.toolCount)));
+  check('jira upstream reaches ready', upstreamStatus.find((s) => s.name === 'jira')?.state === 'ready');
+  check('status reports real tool counts', upstreamStatus.find((s) => s.name === 'jira')?.toolCount === 2, JSON.stringify(upstreamStatus.map((s) => ({ name: s.name, tools: s.toolCount }))));
 
   const namespaced = mcpClient.getTools().map((tool) => tool.name);
-  check('tools are namespaced <server>.<tool>', namespaced.includes('fake-notes.search_notes') && namespaced.includes('stdio-notes.search_notes'), namespaced.join(', '));
+  check('tools are namespaced <server>.<tool>', namespaced.includes('fake-notes.search_notes') && namespaced.includes('stdio-notes.search_notes') && namespaced.includes('jira.jira_search') && namespaced.includes('jira.get_issue'), namespaced.join(', '));
   const directCall = await mcpClient.callTool('fake-notes.search_notes', { query: 'cat' });
   check('namespaced tools/call succeeds', directCall?.content?.[0]?.type === 'text');
+  const directJiraCall = await mcpClient.callTool('jira.jira_search', { jql: 'project = PROJ' });
+  check('namespaced jira tools/call succeeds', directJiraCall?.content?.[0]?.type === 'text');
 
   await waitFor(() => uiClient.events.some((message) => message.t === 'mcp.status' &&
     (message.servers || []).some((server) => server.name === 'fake-notes' && server.state === 'ready')));
@@ -405,8 +498,9 @@ async function main() {
   await waitFor(() => uiClient.events.some((message) => message.id === 99 && 'ok' in message));
   const settingsReply = uiClient.events.find((message) => message.id === 99 && 'ok' in message);
   check('settings.get redacts upstream tokens', !JSON.stringify(settingsReply).includes(upstreamToken));
+  check('settings.get redacts jira secret tokens', !JSON.stringify(settingsReply).includes(jiraSecretToken));
   check('settings.get keeps an auth marker', settingsReply?.patch?.mcpUpstreams?.[0]?.auth === 'configured');
-  check('status and logs contain no token', !JSON.stringify(upstreamStatus).includes(upstreamToken) && !mcpLogs.join('\n').includes(upstreamToken));
+  check('status and logs contain no token', !JSON.stringify(upstreamStatus).includes(upstreamToken) && !JSON.stringify(upstreamStatus).includes(jiraSecretToken) && !mcpLogs.join('\n').includes(upstreamToken) && !mcpLogs.join('\n').includes(jiraSecretToken));
 
   const search = await rpc({
     jsonrpc: '2.0',
@@ -415,8 +509,9 @@ async function main() {
     params: { name: 'notes.search', arguments: { query: 'cat', limit: 5 } }
   }, { session });
   const searchPayload = search.json?.result?.structuredContent;
-  check('notes.search aggregates upstream results', searchPayload?.results?.length === 2, `hits=${searchPayload?.results?.length}`);
-  check('notes.search reports both upstreams healthy', (searchPayload?.sources ?? []).filter((s) => s.state === 'ok').length === 2, JSON.stringify(searchPayload?.sources));
+  check('notes.search aggregates upstream results', searchPayload?.results?.length === 3, `hits=${searchPayload?.results?.length}`);
+  check('notes.search extracted jira issue correctly', searchPayload?.results?.some((r) => r.source === 'jira' && r.title.includes('PROJ-99') && r.snippet.includes('In Progress')));
+  check('notes.search reports all 3 upstreams healthy', (searchPayload?.sources ?? []).filter((s) => s.state === 'ok').length === 3, JSON.stringify(searchPayload?.sources));
 
   // --- unknown tool ---------------------------------------------------
   const unknown = await rpc({

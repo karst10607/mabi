@@ -149,7 +149,15 @@ Windows `%APPDATA%\aurapet-desktop`）列出既有筆記 server，工具以 `<se
     { "name": "joplin", "transport": "streamable-http",
       "url": "http://127.0.0.1:41184/mcp", "token": "<Joplin api.token>", "tokenIn": "query" },
     { "name": "obsidian", "transport": "stdio",
-      "command": "npx", "args": ["-y", "mcp-obsidian"], "env": { "OBSIDIAN_API_KEY": "<key>" } }
+      "command": "npx", "args": ["-y", "mcp-obsidian"], "env": { "OBSIDIAN_API_KEY": "<key>" } },
+    { "name": "jira", "transport": "stdio",
+      "command": "npx", "args": ["-y", "@modelcontextprotocol/server-jira"],
+      "env": {
+        "JIRA_URL": "https://your-domain.atlassian.net",
+        "JIRA_EMAIL": "user@example.com",
+        "JIRA_API_TOKEN": "<Jira API token>"
+      }
+    }
   ]
 }
 ```
