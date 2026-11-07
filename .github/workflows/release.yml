@@ -2,8 +2,8 @@ name: Build & Release AuraPet
 
 # Releases stay manual: only a human-pushed `v*` tag publishes. The
 # workflow_dispatch path is a dry-run that builds and uploads Actions artifacts
-# without touching GitHub Releases. Linux-first: Godot body + Node SEA daemon
-# replace the old electron-builder outputs (Epic #7 / issue #15).
+# without touching GitHub Releases. Linux and Windows: Godot body + Node SEA daemon
+# replace the old electron-builder outputs (Epic #7 / issue #15, #26).
 on:
   push:
     tags:
@@ -105,9 +105,100 @@ jobs:
             dist/linux/*.deb
           if-no-files-found: error
 
+  build-windows:
+    name: Windows Zip
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Cache Godot binary and export templates
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/AppData/Local/aurapet-godot
+            ~/AppData/Roaming/Godot/export_templates
+          key: godot-${{ env.GODOT_RELEASE }}-windows-v1
+
+      - name: Install Godot and export templates
+        shell: pwsh
+        run: |
+          $godotDir = "$env:LOCALAPPDATA\aurapet-godot"
+          $bin = "$godotDir\Godot_v$($env:GODOT_RELEASE)_win64.exe"
+          if (-not (Test-Path $bin)) {
+            New-Item -ItemType Directory -Path $godotDir -Force | Out-Null
+            $zipPath = "$env:RUNNER_TEMP\godot.zip"
+            curl.exe -fL -o $zipPath "https://github.com/godotengine/godot/releases/download/$($env:GODOT_RELEASE)/Godot_v$($env:GODOT_RELEASE)_win64.exe.zip"
+            tar.exe -xf $zipPath -C $godotDir
+            Remove-Item $zipPath -Force
+          }
+          $templateDir = "$env:APPDATA\Godot\export_templates\$($env:GODOT_TEMPLATE_VERSION)"
+          $templateBin = "$templateDir\windows_release_x86_64.exe"
+          if (-not (Test-Path $templateBin)) {
+            $tpzPath = "$env:RUNNER_TEMP\templates.tpz"
+            $extractDir = "$env:RUNNER_TEMP\godot-templates"
+            New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
+            curl.exe -fL -o $tpzPath "https://github.com/godotengine/godot/releases/download/$($env:GODOT_RELEASE)/Godot_v$($env:GODOT_RELEASE)_export_templates.tpz"
+            tar.exe -xf $tpzPath -C $extractDir
+            New-Item -ItemType Directory -Path $templateDir -Force | Out-Null
+            Copy-Item -Path "$extractDir\templates\*" -Destination $templateDir -Recurse -Force
+            Remove-Item $tpzPath -Force
+            Remove-Item $extractDir -Recurse -Force
+          }
+          "GODOT_BIN=$bin" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Install runtime dependencies
+        run: npm ci --omit=dev --ignore-scripts
+
+      - name: Build Windows package
+        run: npm run dist:win
+
+      - name: Smoke packaged daemon (loopback only, no window)
+        shell: pwsh
+        run: |
+          $env:AURAPET_CONFIG_DIR = "$env:RUNNER_TEMP\aurapet-ci"
+          $env:AURAPET_APP_DIR = "$PWD\dist\windows\AuraPet"
+          $env:AURAPET_BRIDGE_PORT = "48961"
+          $env:AURAPET_UI_PORT = "48962"
+          $env:AURAPET_MCP_PORT = "48963"
+          $proc = Start-Process -FilePath "$env:AURAPET_APP_DIR\aurapet-daemon.exe" -PassThru
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 50; $i++) {
+              try {
+                $resp = Invoke-WebRequest -Uri "http://127.0.0.1:48962/" -SkipHttpErrorCheck -TimeoutSec 1 -ErrorAction SilentlyContinue
+                if ($resp) { $ready = $true; break }
+              } catch {}
+              Start-Sleep -Milliseconds 200
+            }
+            if (-not $ready) { throw "Daemon failed to start on port 48962" }
+            $ui = (Invoke-WebRequest -Uri "http://127.0.0.1:48962/" -SkipHttpErrorCheck).StatusCode
+            $body = '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+            $mcp = (Invoke-WebRequest -Uri "http://127.0.0.1:48963/mcp" -Method Post -Body $body -ContentType "application/json" -SkipHttpErrorCheck).StatusCode
+            Write-Host "ui=$ui mcp=$mcp"
+            if ($ui -ne 403) { throw "Expected UI HTTP 403, got $ui" }
+            if ($mcp -ne 401) { throw "Expected MCP HTTP 401, got $mcp" }
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: AuraPet-Windows
+          path: |
+            dist/windows/*.zip
+          if-no-files-found: error
+
   release:
     name: Publish GitHub Release (tag only)
-    needs: build-linux
+    needs: [build-linux, build-windows]
     if: startsWith(github.ref, 'refs/tags/') && (github.event_name == 'push' || inputs.dry_run == false)
     runs-on: ubuntu-latest
     steps:
@@ -115,6 +206,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: AuraPet-Linux
+          path: release
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: AuraPet-Windows
           path: release
 
       - name: List release files

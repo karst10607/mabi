@@ -2,6 +2,23 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.11.0] - 2026-11-07
+
+### Added
+
+- **Windows 支援與打包管線（Epic #7 / #26）**：
+  - `tools/dist/build-win.mjs`：提供 `npm run dist:win`，整合 Godot headless Windows Desktop export（嵌入 PCK）與 Node SEA 單檔 daemon（`aurapet-daemon.exe`），產出 Windows 啟動器 `packaging/aurapet.cmd` 並打包為 zip（`dist/windows/`）。
+  - `godot/export_presets.cfg`：新增 `Windows Desktop` export preset（embed pck 至 `dist/windows/AuraPet.exe`）。
+  - `.github/workflows/release.yml`：補回 `build-windows` CI job（`runs-on: windows-latest`），具備 Godot 4.7.2 win64 與 export templates 下載/快取、打包與 daemon loopback 401/403 smoke 測試，並上傳 `AuraPet-Windows` actions artifact。
+
+### Changed
+
+- **跨平台設定路徑適配**：
+  - `daemon/config-store.js`：新增 `getDefaultConfigDir()`，Windows 下優先讀取 `%APPDATA%\aurapet-desktop`（或 `%USERPROFILE%\AppData\Roaming\aurapet-desktop`），對齊 Electron v1.5.2 行為；macOS 對齊 `~/Library/Application Support/aurapet-desktop`；Linux 保留 `XDG_CONFIG_HOME` 與 `~/.config`。
+  - `daemon/standalone.js`：改用 `getDefaultConfigDir()`，確保在 Windows 環境下正確定位 `app-settings.json` 與 `bridgeToken`。
+  - `godot/body.gd`：`_parse_args` 支援 Windows 路徑解析（優先自 `APPDATA` 或 `USERPROFILE` 讀取），相容現有 Linux/macOS 路徑。
+- README 更新 Windows 建置與執行說明。
+
 ## [1.10.0] - 2026-11-07
 
 ### Added

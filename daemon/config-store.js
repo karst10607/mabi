@@ -11,6 +11,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const SCHEMA_VERSION = 1;
@@ -35,6 +36,21 @@ function writeFileAtomic(filePath, contents, mode = CONFIG_MODE) {
   }
 }
 
+function getDefaultConfigDir() {
+  if (process.env.AURAPET_CONFIG_DIR) {
+    return process.env.AURAPET_CONFIG_DIR;
+  }
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA ||
+      (process.env.USERPROFILE ? path.join(process.env.USERPROFILE, "AppData", "Roaming") : path.join(os.homedir(), "AppData", "Roaming"));
+    return path.join(appData, "aurapet-desktop");
+  }
+  if (process.platform === "darwin") {
+    return path.join(os.homedir(), "Library", "Application Support", "aurapet-desktop");
+  }
+  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "aurapet-desktop");
+}
+
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -44,7 +60,7 @@ function isPlainObject(value) {
  *   dir: directory that holds the config file (Electron's userData in v1.x)
  */
 function createConfigStore(options = {}) {
-  const { dir, file = 'app-settings.json' } = options;
+  const { dir = getDefaultConfigDir(), file = 'app-settings.json' } = options;
   if (!dir) throw new TypeError('createConfigStore requires a directory');
 
   const filePath = path.join(dir, file);
@@ -143,5 +159,6 @@ module.exports = {
   CONFIG_MODE,
   SCHEMA_VERSION,
   createConfigStore,
+  getDefaultConfigDir,
   writeFileAtomic
 };

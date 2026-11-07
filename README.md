@@ -79,10 +79,11 @@ npm ci
 npm start
 ```
 
-### 3. 打包發布（Linux）
-v2 的 Linux 產物不再走 electron-builder：Godot body（embedded pck）＋ Node SEA
-daemon 單檔＋launcher，組成 AppImage 與 deb。
+### 3. 打包發布（Linux 與 Windows）
+v2 的產物不再走 electron-builder：Godot body（embedded pck）＋ Node SEA
+daemon 單檔＋launcher，組成 AppImage／deb（Linux）與 zip（Windows）。
 
+**Linux：**
 ```bash
 nvm use
 npm ci
@@ -98,15 +99,24 @@ dpkg-deb -x dist/linux/aurapet_<version>_amd64.deb /tmp/aurapet-deb
 /tmp/aurapet-deb/usr/bin/aurapet
 ```
 
-Windows／macOS 打包尚未遷移（見 #16）。
+**Windows：**
+```cmd
+npm run dist:win        # → dist/windows/AuraPet-<version>-windows-x86_64.zip 及 dist/windows/AuraPet/
+```
+
+需要 Godot 4.7.2 win64 binary（`GODOT_BIN=C:\path\to\Godot_v4.7.2-stable_win64.exe`，
+預設搜尋桌面或 `%LOCALAPPDATA%\aurapet-godot`）與 Godot export templates（`%APPDATA%\Godot\export_templates\4.7.2.stable\`）。
+輸出目錄包含 `AuraPet.exe`、Node SEA `aurapet-daemon.exe` 與啟動器 `aurapet.cmd`。
+
+macOS 打包尚未遷移（見 #16）。
 
 ### 4. GitHub Actions 遠端建置
-`.github/workflows/release.yml` 只建 Linux：
+`.github/workflows/release.yml` 支援 Linux 與 Windows 建置：
 
-- Actions 頁面 `Run workflow`（`dry_run=true` 預設）：建置並上傳 Actions Artifacts，**不發 Release**。
-- 人工推送 `v*` tag：建置後上傳 AppImage／deb 到 GitHub Release。
+- Actions 頁面 `Run workflow`（`dry_run=true` 預設）：建置並上傳 Actions Artifacts（`AuraPet-Linux` 與 `AuraPet-Windows`），**不發 Release**。
+- 人工推送 `v*` tag：建置後上傳 AppImage／deb／zip 到 GitHub Release。
 
-Godot binary 與 2 GB export templates 以 `actions/cache` 快取，重跑不必重新下載。
+Godot binary 與 export templates 以 `actions/cache` 快取，重跑不必重新下載。
 
 ### 5. Godot body v0（v2 遷移中）
 Epic #7 的 body 實作在 `godot/`：透明視窗、rig、tray、roam 改由 Godot 4.7 執行，只透過

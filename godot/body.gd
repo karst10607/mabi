@@ -145,9 +145,24 @@ func _parse_args() -> void:
 		elif a.begins_with("--selftest="):
 			selftest = a.substr(11)
 	if config_path == "":
-		var base := OS.get_environment("XDG_CONFIG_HOME")
+		var base := ""
+		if OS.has_feature("windows") or OS.get_name() == "Windows":
+			base = OS.get_environment("APPDATA")
+			if base == "":
+				var profile := OS.get_environment("USERPROFILE")
+				if profile != "":
+					base = profile + "/AppData/Roaming"
 		if base == "":
-			base = OS.get_environment("HOME") + "/.config"
+			base = OS.get_environment("XDG_CONFIG_HOME")
+		if base == "":
+			var home := OS.get_environment("HOME")
+			if home != "":
+				if OS.has_feature("macos") or OS.get_name() == "macOS":
+					base = home + "/Library/Application Support"
+				else:
+					base = home + "/.config"
+		if base == "":
+			base = "."
 		config_path = base + "/aurapet-desktop/app-settings.json"
 	if token == "":
 		token = _read_config_token()
