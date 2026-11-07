@@ -1,0 +1,22 @@
+; Godot 4.7 transparent-window probe for AuraPet CPU-floor verification.
+config_version=5
+
+[application]
+
+config/name="AuraPet Godot Probe"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+
+[display]
+
+window/size/viewport_width=240
+window/size/viewport_height=290
+window/size/borderless=true
+window/size/always_on_top=true
+window/per_pixel_transparency/allowed=true
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0, 0, 0, 0)
