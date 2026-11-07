@@ -1,0 +1,57 @@
+#!/bin/sh
+# AuraPet launcher: start the headless daemon, then the exported Godot body.
+# Works from an AppImage (APPDIR) and from a deb install (/usr/bin/aurapet).
+set -u
+
+self=$(readlink -f "$0")
+bindir=$(dirname "$self")
+if [ -n "${APPDIR:-}" ] && [ -d "$APPDIR/usr/lib/aurapet" ]; then
+  lib="$APPDIR/usr/lib/aurapet"
+else
+  lib="$bindir/../lib/aurapet"
+fi
+
+config_dir="${AURAPET_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/aurapet-desktop}"
+bridge_port="${AURAPET_BRIDGE_PORT:-47821}"
+ui_port="${AURAPET_UI_PORT:-47830}"
+mcp_port="${AURAPET_MCP_PORT:-47822}"
+
+mkdir -p "$config_dir"
+export AURAPET_CONFIG_DIR="$config_dir"
+export AURAPET_APP_DIR="$lib"
+export AURAPET_BRIDGE_PORT="$bridge_port"
+export AURAPET_UI_PORT="$ui_port"
+export AURAPET_MCP_PORT="$mcp_port"
+
+"$lib/aurapet-daemon" &
+daemon_pid=$!
+
+cleanup() {
+  kill "$daemon_pid" 2>/dev/null
+  wait "$daemon_pid" 2>/dev/null
+}
+trap cleanup EXIT INT TERM
+
+# The body reads the bridge token from the config file, so wait for the daemon
+# to write it (first run) before launching the window.
+i=0
+while [ "$i" -lt 100 ]; do
+  if ! kill -0 "$daemon_pid" 2>/dev/null; then
+    echo "aurapet: daemon exited during startup" >&2
+    exit 1
+  fi
+  if grep -q '"bridgeToken"' "$config_dir/app-settings.json" 2>/dev/null; then
+    break
+  fi
+  sleep 0.1
+  i=$((i + 1))
+done
+
+# AURAPET_BODY_ARGS is intentionally word-split for dev flags such as
+# "--no-tray --shot=/tmp/pet.png --shot-after=5".
+# shellcheck disable=SC2086
+"$lib/aurapet-body" -- \
+  "--config=$config_dir/app-settings.json" \
+  "--port=$bridge_port" \
+  "--ui-port=$ui_port" \
+  ${AURAPET_BODY_ARGS:-}

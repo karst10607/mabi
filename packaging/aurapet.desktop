@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=AuraPet
+Comment=AI desktop pet: Godot body + Node daemon
+Exec=aurapet
+Icon=aurapet
+Terminal=false
+Categories=Utility;
+Keywords=pet;desktop;ai;mcp;
+StartupWMClass=AuraPet
