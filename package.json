@@ -1,6 +1,6 @@
 {
   "name": "aurapet-desktop",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "description": "Cross-platform AI Desktop Pet & Companion (ChatGPT-style floating assistant)",
   "main": "main.js",
   "scripts": {
@@ -8,7 +8,8 @@
     "dev": "electron .",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
-    "dist:linux": "node tools/dist/build-linux.mjs"
+    "dist:linux": "node tools/dist/build-linux.mjs",
+    "dist:win": "node tools/dist/build-win.mjs"
   },
   "keywords": [
     "desktop-pet",

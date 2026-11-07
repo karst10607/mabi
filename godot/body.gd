@@ -145,12 +145,31 @@ func _parse_args() -> void:
 		elif a.begins_with("--selftest="):
 			selftest = a.substr(11)
 	if config_path == "":
-		var base := OS.get_environment("XDG_CONFIG_HOME")
-		if base == "":
-			base = OS.get_environment("HOME") + "/.config"
-		config_path = base + "/aurapet-desktop/app-settings.json"
+		config_path = _default_config_path()
 	if token == "":
 		token = _read_config_token()
+
+func _default_config_path() -> String:
+	# Same file Electron v1.5.2 used (app.getPath('userData')).
+	match OS.get_name():
+		"Windows":
+			var win_base := OS.get_environment("APPDATA")
+			if win_base == "":
+				var profile := OS.get_environment("USERPROFILE")
+				if profile == "":
+					profile = OS.get_environment("HOMEDRIVE") + OS.get_environment("HOMEPATH")
+				if profile != "":
+					win_base = profile + "/AppData/Roaming"
+			if win_base != "":
+				return win_base + "/aurapet-desktop/app-settings.json"
+		"macOS":
+			var home := OS.get_environment("HOME")
+			if home != "":
+				return home + "/Library/Application Support/aurapet-desktop/app-settings.json"
+	var base := OS.get_environment("XDG_CONFIG_HOME")
+	if base == "":
+		base = OS.get_environment("HOME") + "/.config"
+	return base + "/aurapet-desktop/app-settings.json"
 
 func _read_config_token() -> String:
 	if not FileAccess.file_exists(config_path):

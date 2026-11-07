@@ -29,7 +29,9 @@ Measured on the reference machine (Vega 8 / X11 / Cinnamon, 240×290 window):
 # brain without the Electron window (stop the app first if you want port 47821)
 node tools/bridge/dev-brain.mjs --port=47821
 
-# body reads the bridge token from ~/.config/aurapet-desktop/app-settings.json
+# body reads the bridge token from the daemon config dir
+# (Linux ~/.config/aurapet-desktop, macOS ~/Library/Application Support/aurapet-desktop,
+#  Windows %APPDATA%\aurapet-desktop)
 GODOT_BIN=/path/to/Godot_v4.7.2-stable_linux.x86_64
 "$GODOT_BIN" --path godot -- --port=47821 --lowproc
 ```

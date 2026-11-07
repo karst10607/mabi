@@ -140,7 +140,9 @@ node tools/mcp/upstream-smoke.mjs --from-joplin
 
 ## Config file
 
-`<userData>/app-settings.json`, e.g.
+`<userData>/app-settings.json` — the platform default matches Electron v1.5.2
+(`Linux ~/.config`, `macOS ~/Library/Application Support`, `Windows %APPDATA%`,
+each under `aurapet-desktop/`; `AURAPET_CONFIG_DIR` overrides). For example:
 
 ```json
 {

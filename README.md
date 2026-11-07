@@ -79,14 +79,15 @@ npm ci
 npm start
 ```
 
-### 3. 打包發布（Linux）
-v2 的 Linux 產物不再走 electron-builder：Godot body（embedded pck）＋ Node SEA
-daemon 單檔＋launcher，組成 AppImage 與 deb。
+### 3. 打包發布（Linux／Windows）
+v2 的產物不再走 electron-builder：Godot body（embedded pck）＋ Node SEA daemon
+單檔＋launcher。Linux 產出 AppImage／deb，Windows 產出 zip（exe＋cmd 啟動器）。
 
 ```bash
 nvm use
 npm ci
 npm run dist:linux      # → dist/linux/AuraPet-<version>-x86_64.AppImage、aurapet_<version>_amd64.deb
+npm run dist:win        # → dist/windows/AuraPet-<version>-win64.zip
 ```
 
 需要 Godot 4.7.2 editor binary（`GODOT_BIN=/path/to/Godot_v4.7.2-stable_linux.x86_64`，
@@ -98,15 +99,19 @@ dpkg-deb -x dist/linux/aurapet_<version>_amd64.deb /tmp/aurapet-deb
 /tmp/aurapet-deb/usr/bin/aurapet
 ```
 
-Windows／macOS 打包尚未遷移（見 #16）。
+`dist:win` 可在 Windows 直接執行，也可在 Linux／macOS 交叉建置（會下載同版本
+win-x64 `node.exe`；Godot Windows export templates 需已安裝）。解壓後執行
+`AuraPet-win64\aurapet.cmd`：先起 `aurapet-daemon.exe`，再開 Godot body；
+設定檔在 `%APPDATA%\aurapet-desktop\app-settings.json`。macOS 打包尚未遷移（見 #16）。
 
 ### 4. GitHub Actions 遠端建置
-`.github/workflows/release.yml` 只建 Linux：
+`.github/workflows/release.yml` 建置 Linux 與 Windows：
 
 - Actions 頁面 `Run workflow`（`dry_run=true` 預設）：建置並上傳 Actions Artifacts，**不發 Release**。
-- 人工推送 `v*` tag：建置後上傳 AppImage／deb 到 GitHub Release。
+- 人工推送 `v*` tag：建置後上傳 AppImage／deb／Windows zip 到 GitHub Release。
 
-Godot binary 與 2 GB export templates 以 `actions/cache` 快取，重跑不必重新下載。
+Godot binary 與 2 GB export templates 以 `actions/cache` 快取，重跑不必重新下載；
+Windows job 另做打包後 daemon 的 loopback smoke（UI 403／MCP 401）。
 
 ### 5. Godot body v0（v2 遷移中）
 Epic #7 的 body 實作在 `godot/`：透明視窗、rig、tray、roam 改由 Godot 4.7 執行，只透過
@@ -126,8 +131,10 @@ allowlist。tools：`pet.say`、`pet.mood.get`、`pet.ask`＋`pet.ask.result`（
 設定頁「系統設定」可看 server／上游狀態。細節見 `daemon/README.md`。
 
 ### 8. MCP client face（上游筆記 MCP 聚合）
-daemon 也是 MCP **client**：`mcpUpstreams`（`~/.config/aurapet-desktop/app-settings.json`，
-0600）列出既有筆記 server，工具以 `<server>.<tool>` 命名。支援 Streamable HTTP 與 stdio：
+daemon 也是 MCP **client**：`mcpUpstreams`（設定檔 `app-settings.json`，0600；Linux
+`~/.config/aurapet-desktop`、macOS `~/Library/Application Support/aurapet-desktop`、
+Windows `%APPDATA%\aurapet-desktop`）列出既有筆記 server，工具以 `<server>.<tool>` 命名。
+支援 Streamable HTTP 與 stdio：
 
 ```jsonc
 {
@@ -159,8 +166,8 @@ mabi/
 ├── daemon/               # brain 模組：config store、pet state、AI service、WS bridge
 ├── godot/                # Godot body v0：透明視窗、rig、tray helper、probe
 ├── ui/                   # 按需 chat／設定頁的瀏覽器 shim
-├── packaging/            # Linux launcher 與 .desktop（AppImage／deb）
-├── tools/dist/           # Linux 打包：Godot export＋Node SEA＋AppImage／deb
+├── packaging/            # Linux launcher／.desktop 與 Windows .cmd 啟動器
+├── tools/dist/           # 打包：Godot export＋Node SEA（Linux AppImage／deb、Windows zip）
 ├── tools/bridge/         # 協議 schema、contract test、headless dev brain
 ├── tools/mcp/            # MCP server／client face smoke tests
 ├── assets/               # 托盤圖示 (macOS template PNG + Win/Linux 彩色 PNG)
