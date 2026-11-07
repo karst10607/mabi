@@ -91,6 +91,8 @@ var idx_visible := -1
 
 func _ready() -> void:
 	get_tree().root.transparent_bg = true
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_TRANSPARENT, true)
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
 	_parse_args()
 	if shot_path != "":
 		use_tray = false

@@ -41,7 +41,7 @@ exit /b 1
 :ready
 rem AURAPET_BODY_ARGS is intentionally word-split for dev flags such as
 rem "--no-tray --shot=%TEMP%\pet.png --shot-after=5".
-"%LIB%\AuraPet.exe" -- "--config=%AURAPET_CONFIG_DIR%\app-settings.json" "--port=%AURAPET_BRIDGE_PORT%" "--ui-port=%AURAPET_UI_PORT%" %AURAPET_BODY_ARGS%
+"%LIB%\AuraPet.exe" --rendering-driver d3d12 -- "--config=%AURAPET_CONFIG_DIR%\app-settings.json" "--port=%AURAPET_BRIDGE_PORT%" "--ui-port=%AURAPET_UI_PORT%" %AURAPET_BODY_ARGS%
 set "BODY_CODE=%ERRORLEVEL%"
 
 taskkill /PID %DAEMON_PID% /T /F >nul 2>&1
