@@ -7,9 +7,8 @@
  */
 'use strict';
 
-const os = require('os');
 const path = require('path');
-const { createConfigStore } = require('./config-store');
+const { createConfigStore, defaultConfigDir } = require('./config-store');
 const { createBridgeServer } = require('./bridge-server');
 const { createUiServer, DEFAULT_UI_PORT } = require('./ui-server');
 const { createMcpServer, DEFAULT_MCP_PORT } = require('./mcp-server');
@@ -23,8 +22,7 @@ function packageVersion() {
   }
 }
 
-const configDir = process.env.AURAPET_CONFIG_DIR ||
-  path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'aurapet-desktop');
+const configDir = defaultConfigDir();
 const appDir = process.env.AURAPET_APP_DIR || path.join(__dirname, '..');
 const bridgePort = Number(process.env.AURAPET_BRIDGE_PORT) || 47821;
 const uiPort = Number(process.env.AURAPET_UI_PORT) || DEFAULT_UI_PORT;

@@ -2,6 +2,19 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.11.0] - 2026-11-07
+
+### Added
+
+- **Windows 打包（Epic #7 / #26）**：`npm run dist:win` 以 Godot Windows release export（embedded pck）＋Node SEA（esbuild bundle → postject）產出 `AuraPet.exe`／`aurapet-daemon.exe`，加上 `packaging/aurapet.cmd` 啟動器，打包成 `dist/windows/AuraPet-<version>-win64.zip`。在 Linux／macOS 上交叉建置時會自動下載對應版本的 win-x64 `node.exe`。
+- `godot/export_presets.cfg` 新增 `Windows Desktop` preset（x86_64、embed pck、輸出 `dist/windows/AuraPet.exe`）。
+- `release.yml` 新增 `build-windows` job（`windows-latest`）：Godot 4.7.2 windows binary／export templates 走 Actions cache、執行 `dist:win`、對打包後的 daemon 做 loopback smoke（UI 403／MCP 401），上傳 `AuraPet-Windows` artifact；`release` job 同時收 Linux 與 Windows 產物。
+
+### Changed
+
+- 設定檔目錄解析統一跨平台：新增 `defaultConfigDir()`（`daemon/config-store.js`），Windows 用 `%APPDATA%\aurapet-desktop`、macOS 用 `~/Library/Application Support/aurapet-desktop`、Linux 維持 `XDG_CONFIG_HOME`／`~/.config`；`standalone.js` 與 Godot body 的 `--config` 預設值同規則（Electron v1.5.2 `userData` 相容）。
+- README 補 Windows 建置與 CI 說明。
+
 ## [1.10.0] - 2026-11-07
 
 ### Added

@@ -105,9 +105,97 @@ jobs:
             dist/linux/*.deb
           if-no-files-found: error
 
+  build-windows:
+    name: Windows exe + zip
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Cache Godot binary and export templates
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/aurapet-godot
+            ~/AppData/Roaming/Godot/export_templates
+          key: godot-${{ env.GODOT_RELEASE }}-windows-v2
+
+      - name: Install Godot and export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/aurapet-godot"
+          BIN="$HOME/aurapet-godot/Godot_v${GODOT_RELEASE}_win64.exe"
+          if [ ! -f "$BIN" ]; then
+            curl -fL -o /tmp/godot-win.zip \
+              "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_win64.exe.zip"
+            unzip -o /tmp/godot-win.zip -d "$HOME/aurapet-godot"
+          fi
+          # Godot on Windows reads templates from %APPDATA%\Godot.
+          if command -v cygpath >/dev/null; then APP_DATA="$(cygpath -u "$APPDATA")"; else APP_DATA="$APPDATA"; fi
+          TPL_DIR="$APP_DATA/Godot/export_templates/${GODOT_TEMPLATE_VERSION}"
+          if [ ! -f "$TPL_DIR/windows_release_x86_64.exe" ]; then
+            curl -fL -o /tmp/templates.tpz \
+              "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_export_templates.tpz"
+            rm -rf /tmp/godot-templates
+            mkdir -p /tmp/godot-templates
+            unzip -q -o /tmp/templates.tpz -d /tmp/godot-templates
+            mkdir -p "$TPL_DIR"
+            # The .tpz stores the template files directly under templates/.
+            mv /tmp/godot-templates/templates/* "$TPL_DIR/"
+          fi
+          echo "GODOT_BIN=$BIN" >> "$GITHUB_ENV"
+
+      - name: Install runtime dependencies
+        run: npm ci --omit=dev --ignore-scripts
+
+      - name: Build Windows package
+        run: npm run dist:win
+
+      - name: Smoke packaged daemon (loopback only, no window)
+        shell: pwsh
+        run: |
+          $env:AURAPET_CONFIG_DIR = Join-Path $env:RUNNER_TEMP 'aurapet-ci'
+          $env:AURAPET_APP_DIR = Join-Path (Get-Location).Path 'dist/windows/AuraPet-win64'
+          $env:AURAPET_BRIDGE_PORT = '48961'
+          $env:AURAPET_UI_PORT = '48962'
+          $env:AURAPET_MCP_PORT = '48963'
+          $daemon = Start-Process -FilePath (Join-Path $env:AURAPET_APP_DIR 'aurapet-daemon.exe') -PassThru -WindowStyle Hidden
+          try {
+            $ui = $null
+            for ($i = 0; $i -lt 100; $i++) {
+              try {
+                $ui = (Invoke-WebRequest -Uri 'http://127.0.0.1:48962/' -SkipHttpErrorCheck -TimeoutSec 2).StatusCode
+                break
+              } catch { Start-Sleep -Milliseconds 200 }
+            }
+            $mcp = (Invoke-WebRequest -Uri 'http://127.0.0.1:48963/mcp' -Method Post `
+              -ContentType 'application/json' `
+              -Body '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' `
+              -SkipHttpErrorCheck -TimeoutSec 5).StatusCode
+            Write-Host "ui=$ui mcp=$mcp"
+            if ($ui -ne 403) { throw "ui expected 403, got $ui" }
+            if ($mcp -ne 401) { throw "mcp expected 401, got $mcp" }
+          } finally {
+            Stop-Process -Id $daemon.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: AuraPet-Windows
+          path: dist/windows/*.zip
+          if-no-files-found: error
+
   release:
     name: Publish GitHub Release (tag only)
-    needs: build-linux
+    needs: [build-linux, build-windows]
     if: startsWith(github.ref, 'refs/tags/') && (github.event_name == 'push' || inputs.dry_run == false)
     runs-on: ubuntu-latest
     steps:
@@ -115,6 +203,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: AuraPet-Linux
+          path: release
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: AuraPet-Windows
           path: release
 
       - name: List release files

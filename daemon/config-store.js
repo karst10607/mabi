@@ -11,10 +11,34 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const SCHEMA_VERSION = 1;
 const CONFIG_MODE = 0o600;
+
+/**
+ * Directory holding `app-settings.json`. Mirrors Electron v1.5.2's
+ * `app.getPath('userData')` so upgrades keep reading the same file:
+ *   Windows  %APPDATA%\aurapet-desktop
+ *   macOS    ~/Library/Application Support/aurapet-desktop
+ *   Linux    $XDG_CONFIG_HOME (or ~/.config) /aurapet-desktop
+ * `AURAPET_CONFIG_DIR` overrides everything (tests, launchers, CI smoke).
+ */
+function defaultConfigDir(env = process.env, platform = process.platform) {
+  if (env.AURAPET_CONFIG_DIR) return env.AURAPET_CONFIG_DIR;
+  if (platform === 'win32') {
+    const appData = env.APPDATA ||
+      (env.USERPROFILE
+        ? path.join(env.USERPROFILE, 'AppData', 'Roaming')
+        : path.join(os.homedir(), 'AppData', 'Roaming'));
+    return path.join(appData, 'aurapet-desktop');
+  }
+  if (platform === 'darwin') {
+    return path.join(env.HOME || os.homedir(), 'Library', 'Application Support', 'aurapet-desktop');
+  }
+  return path.join(env.XDG_CONFIG_HOME || path.join(env.HOME || os.homedir(), '.config'), 'aurapet-desktop');
+}
 
 function writeFileAtomic(filePath, contents, mode = CONFIG_MODE) {
   const dir = path.dirname(filePath);
@@ -143,5 +167,6 @@ module.exports = {
   CONFIG_MODE,
   SCHEMA_VERSION,
   createConfigStore,
+  defaultConfigDir,
   writeFileAtomic
 };
