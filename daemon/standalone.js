@@ -13,6 +13,7 @@ const { createConfigStore } = require('./config-store');
 const { createBridgeServer } = require('./bridge-server');
 const { createUiServer, DEFAULT_UI_PORT } = require('./ui-server');
 const { createMcpServer, DEFAULT_MCP_PORT } = require('./mcp-server');
+const { createMcpClient } = require('./mcp-client');
 
 function packageVersion() {
   try {
@@ -32,8 +33,13 @@ const mcpPort = Number(process.env.AURAPET_MCP_PORT) || DEFAULT_MCP_PORT;
 let bridge = null;
 let ui = null;
 let mcp = null;
+let mcpClient = null;
+let shuttingDown = false;
 
-function shutdown(code = 0) {
+async function shutdown(code = 0) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  if (mcpClient) await mcpClient.stop();
   if (mcp) mcp.stop();
   if (ui) ui.stop();
   if (bridge) bridge.stop();
@@ -45,10 +51,17 @@ async function main() {
   bridge = createBridgeServer({ configStore: store, port: bridgePort, brainVersion: packageVersion() });
   await bridge.start();
 
+  mcpClient = createMcpClient({
+    configStore: store,
+    onStatus: (servers) => bridge.setUpstreamStatus(servers)
+  });
+  bridge.attachMcpClient(mcpClient);
+  await mcpClient.start();
+
   ui = createUiServer({ configStore: store, token: bridge.token, bridgePort: bridge.port, port: uiPort, root: appDir });
   await ui.start().catch((error) => console.warn(`aurapet-daemon: ui server unavailable: ${error.message}`));
 
-  mcp = createMcpServer({ configStore: store, bridge, port: mcpPort });
+  mcp = createMcpServer({ configStore: store, bridge, port: mcpPort, mcpClient });
   await mcp.start().catch((error) => console.warn(`aurapet-daemon: mcp server unavailable: ${error.message}`));
 
   console.log(`aurapet-daemon: ws=${bridge.port} ui=${uiPort} mcp=${mcpPort} config=${configDir}`);

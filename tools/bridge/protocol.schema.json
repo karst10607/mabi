@@ -364,10 +364,19 @@
                 "name": { "type": "string", "minLength": 1 },
                 "transport": {
                   "type": "string",
+                  "enum": ["stdio", "streamable-http"],
                   "description": "stdio or streamable-http"
                 },
-                "state": { "type": "string" },
-                "toolCount": { "type": "integer", "minimum": 0 }
+                "state": {
+                  "type": "string",
+                  "enum": ["configured", "connecting", "ready", "error", "stopped"],
+                  "description": "Live MCP client connection state"
+                },
+                "toolCount": { "type": "integer", "minimum": 0 },
+                "error": {
+                  "type": "string",
+                  "description": "Redacted failure reason; never contains credentials or URLs"
+                }
               }
             }
           }
@@ -388,10 +397,19 @@
               "name": { "type": "string", "minLength": 1 },
               "transport": {
                 "type": "string",
+                "enum": ["stdio", "streamable-http"],
                 "description": "stdio or streamable-http"
               },
-              "state": { "type": "string" },
-              "toolCount": { "type": "integer", "minimum": 0 }
+              "state": {
+                "type": "string",
+                "enum": ["configured", "connecting", "ready", "error", "stopped"],
+                "description": "Live MCP client connection state"
+              },
+              "toolCount": { "type": "integer", "minimum": 0 },
+              "error": {
+                "type": "string",
+                "description": "Redacted failure reason; never contains credentials or URLs"
+              }
             }
           }
         }

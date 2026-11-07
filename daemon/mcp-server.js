@@ -15,14 +15,13 @@
 const crypto = require('crypto');
 const http = require('http');
 const AIService = require('./ai-service');
+const { normalizeUpstreams } = require('./mcp-client');
 
 const DEFAULT_MCP_PORT = 47822;
 const DEFAULT_PATH = '/mcp';
 const MCP_PROTOCOL_VERSION = '2025-06-18';
 const SUPPORTED_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const MAX_BODY_BYTES = 256 * 1024;
-const SEARCH_BUDGET_MS = 4500;
-const UPSTREAM_TIMEOUT_MS = 2000;
 const ASK_TTL_MS = 15 * 60 * 1000;
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const MAX_TEXT = 4000;
@@ -157,119 +156,11 @@ function jsonRpcResult(id, result) {
   return { jsonrpc: '2.0', id, result };
 }
 
-/** Accept application/json or an SSE frame with the matching JSON-RPC reply. */
-function parseJsonRpcBody(body, id) {
-  if (!body) return null;
-  try {
-    return JSON.parse(body);
-  } catch {
-    /* fall through to SSE */
-  }
-  const messages = [];
-  for (const line of body.split(/\r?\n/)) {
-    if (!line.startsWith('data:')) continue;
-    const data = line.slice(5).trim();
-    if (!data) continue;
-    try {
-      messages.push(JSON.parse(data));
-    } catch {
-      /* ignore partial frames */
-    }
-  }
-  return messages.find((message) => message && message.id === id) || messages[0] || null;
-}
-
-async function postJsonRpc(url, message, headers, timeoutMs) {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json, text/event-stream',
-      ...headers
-    },
-    body: JSON.stringify(message),
-    signal: AbortSignal.timeout(Math.max(250, timeoutMs))
-  });
-  return response;
-}
-
-function pickSearchTool(tools) {
-  if (!Array.isArray(tools)) return null;
-  const names = tools.map((tool) => tool && tool.name).filter((name) => typeof name === 'string');
-  const patterns = [/^search$/i, /search/i, /find/i, /query/i];
-  for (const pattern of patterns) {
-    const hit = names.find((name) => pattern.test(name));
-    if (hit) return tools.find((tool) => tool.name === hit);
-  }
-  return null;
-}
-
-function searchArgumentName(tool, fallback) {
-  const props = tool?.inputSchema?.properties;
-  if (!props || typeof props !== 'object') return fallback;
-  if (Object.hasOwn(props, 'query')) return 'query';
-  if (Object.hasOwn(props, 'q')) return 'q';
-  if (Object.hasOwn(props, 'text')) return 'text';
-  return fallback;
-}
-
-function extractItems(text) {
-  if (typeof text !== 'string') return [];
-  let parsed = null;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    /* plain text */
-  }
-  const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.results) ? parsed.results : null;
-  if (!list) {
-    const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 240);
-    return snippet ? [{ title: '', snippet }] : [];
-  }
-  return list
-    .filter((item) => item && typeof item === 'object')
-    .map((item) => ({
-      title: String(item.title ?? item.name ?? item.path ?? ''),
-      snippet: String(item.snippet ?? item.excerpt ?? item.content ?? item.text ?? '')
-        .replace(/\s+/g, ' ')
-        .slice(0, 240),
-      ...(item.url || item.link ? { url: String(item.url ?? item.link) } : {})
-    }));
-}
-
-function normalizeUpstreams(raw) {
-  if (!Array.isArray(raw)) return [];
-  const seen = new Set();
-  const out = [];
-  for (const entry of raw) {
-    if (!entry || typeof entry !== 'object') continue;
-    const name = typeof entry.name === 'string' ? entry.name.trim() : '';
-    const url = typeof entry.url === 'string' ? entry.url.trim() : '';
-    if (!name || !url || seen.has(name)) continue;
-    try {
-      const parsed = new URL(url);
-      if (!isLoopbackHost(parsed.host) && parsed.hostname !== '127.0.0.1') {
-        // Remote note services are an explicit opt-in; allow https only.
-        if (parsed.protocol !== 'https:') continue;
-      }
-    } catch {
-      continue;
-    }
-    seen.add(name);
-    out.push({
-      name,
-      url,
-      token: typeof entry.token === 'string' ? entry.token : '',
-      transport: entry.transport === 'stdio' ? 'stdio' : 'streamable-http'
-    });
-  }
-  return out;
-}
-
 function createMcpServer(options = {}) {
   const {
     configStore,
     bridge,
+    mcpClient = null,
     port = DEFAULT_MCP_PORT,
     path = DEFAULT_PATH,
     log = console,
@@ -314,6 +205,7 @@ function createMcpServer(options = {}) {
   }
 
   function upstreamServers() {
+    if (mcpClient) return mcpClient.getServers();
     return normalizeUpstreams(configStore.get('mcpUpstreams')).map((upstream) => ({
       name: upstream.name,
       transport: upstream.transport,
@@ -391,124 +283,20 @@ function createMcpServer(options = {}) {
     });
   }
 
-  async function callUpstream(upstream, query, limit, deadline) {
-    if (upstream.transport !== 'streamable-http') {
-      return { name: upstream.name, state: 'skipped', error: 'stdio upstreams are not aggregated yet' };
-    }
-    const headers = {};
-    if (upstream.token) headers.Authorization = `Bearer ${upstream.token}`;
-    const remaining = () => Math.max(250, Math.min(UPSTREAM_TIMEOUT_MS, deadline - Date.now()));
-
-    const init = await postJsonRpc(
-      upstream.url,
-      {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: {
-          protocolVersion: MCP_PROTOCOL_VERSION,
-          capabilities: {},
-          clientInfo: { name: 'aurapet-mcp', version: SERVER_INFO.version }
-        }
-      },
-      headers,
-      remaining()
-    );
-    if (init.status === 401 || init.status === 403) {
-      return { name: upstream.name, state: 'error', error: `upstream rejected credentials (${init.status})` };
-    }
-    const sessionId = init.headers.get('mcp-session-id');
-    if (sessionId) headers['Mcp-Session-Id'] = sessionId;
-    const initBody = parseJsonRpcBody(await init.text(), 1);
-    if (!initBody || initBody.error) {
-      return { name: upstream.name, state: 'error', error: initBody?.error?.message || `initialize failed (${init.status})` };
-    }
-
-    await postJsonRpc(
-      upstream.url,
-      { jsonrpc: '2.0', method: 'notifications/initialized' },
-      headers,
-      remaining()
-    ).catch(() => null);
-
-    const listResponse = await postJsonRpc(
-      upstream.url,
-      { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
-      headers,
-      remaining()
-    );
-    const listBody = parseJsonRpcBody(await listResponse.text(), 2);
-    const tool = pickSearchTool(listBody?.result?.tools);
-    if (!tool) return { name: upstream.name, state: 'error', error: 'no search-like tool' };
-
-    const callResponse = await postJsonRpc(
-      upstream.url,
-      {
-        jsonrpc: '2.0',
-        id: 3,
-        method: 'tools/call',
-        params: {
-          name: tool.name,
-          arguments: { [searchArgumentName(tool, 'query')]: query, limit }
-        }
-      },
-      headers,
-      remaining()
-    );
-    const callBody = parseJsonRpcBody(await callResponse.text(), 3);
-    if (!callBody || callBody.error) {
-      return { name: upstream.name, state: 'error', error: callBody?.error?.message || `tools/call failed (${callResponse.status})` };
-    }
-    const content = callBody.result?.content;
-    const text = Array.isArray(content)
-      ? content.filter((item) => item && item.type === 'text' && typeof item.text === 'string').map((item) => item.text).join('\n')
-      : '';
-    const items = extractItems(text).map((item) => ({ source: upstream.name, ...item }));
-    return { name: upstream.name, state: 'ok', tool: tool.name, items };
-  }
-
   async function toolNotesSearch(args) {
     const query = typeof args.query === 'string' ? args.query.trim() : '';
     if (!query || query.length > 500) return textResult({ ok: false, error: 'query must be 1..500 chars' }, true);
     const limit = Number.isInteger(args.limit) ? Math.min(50, Math.max(1, args.limit)) : 10;
     const wanted = Array.isArray(args.sources) ? args.sources.filter((name) => typeof name === 'string') : null;
-    const upstreams = normalizeUpstreams(configStore.get('mcpUpstreams'))
-      .filter((upstream) => !wanted || wanted.includes(upstream.name))
-      .slice(0, 10);
-
-    if (upstreams.length === 0) {
+    if (!mcpClient) {
       return textResult({
         query,
         results: [],
         sources: [],
-        note: 'no upstream MCP servers configured (settings key mcpUpstreams)'
+        note: 'upstream MCP client not attached (settings key mcpUpstreams)'
       });
     }
-
-    const deadline = Date.now() + SEARCH_BUDGET_MS;
-    const settled = await Promise.all(upstreams.map((upstream) =>
-      callUpstream(upstream, query, limit, deadline).catch((error) => ({
-        name: upstream.name,
-        state: 'error',
-        error: error.name === 'TimeoutError' ? 'timed out' : error.message
-      }))
-    ));
-
-    const results = [];
-    const sources = [];
-    for (const entry of settled) {
-      sources.push({
-        name: entry.name,
-        state: entry.state,
-        ...(entry.tool ? { tool: entry.tool } : {}),
-        ...(entry.error ? { error: entry.error } : {})
-      });
-      for (const item of entry.items || []) {
-        if (results.length >= limit) break;
-        results.push(item);
-      }
-    }
-    return textResult({ query, results, sources });
+    return textResult(await mcpClient.search(query, { limit, sources: wanted }));
   }
 
   async function callTool(name, args) {
