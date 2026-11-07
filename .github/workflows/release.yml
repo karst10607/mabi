@@ -42,7 +42,7 @@ jobs:
           path: |
             ~/.cache/aurapet-godot
             ~/.local/share/godot/export_templates
-          key: godot-${{ env.GODOT_RELEASE }}-linux
+          key: godot-${{ env.GODOT_RELEASE }}-linux-v2
 
       - name: Install Godot, export templates and squashfs tools
         run: |
@@ -55,14 +55,15 @@ jobs:
             unzip -o /tmp/godot.zip -d "$HOME/.cache/aurapet-godot"
             chmod +x "$BIN"
           fi
-          if [ ! -d "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}" ]; then
+          if [ ! -f "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}/linux_release.x86_64" ]; then
             curl -fL -o /tmp/templates.tpz \
               "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_export_templates.tpz"
             rm -rf /tmp/godot-templates
             mkdir -p /tmp/godot-templates
             unzip -q -o /tmp/templates.tpz -d /tmp/godot-templates
-            mkdir -p "$HOME/.local/share/godot/export_templates"
-            mv "/tmp/godot-templates/templates/${GODOT_TEMPLATE_VERSION}" "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}"
+            mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}"
+            # The .tpz stores the template files directly under templates/.
+            mv /tmp/godot-templates/templates/* "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}/"
           fi
           sudo apt-get update
           sudo apt-get install -y squashfs-tools
