@@ -5,3 +5,6 @@ dist-new/
 *.log
 .env
 renderer/models/pet.glb
+
+# Godot import cache
+godot/.godot/

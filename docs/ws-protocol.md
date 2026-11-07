@@ -1,7 +1,8 @@
 # AuraPet Bridge Protocol（WS）v0.1
 
-Status：**CANDIDATE**。機器可讀契約與 contract test 已落地（見第 6 節）；Godot body 與
-Node daemon 兩端實作落地後升 v1.0／FROZEN。凍結後同 v 只允许 additive 變更
+Status：**CANDIDATE**。機器可讀契約與 contract test 已落地（見第 6 節）；Godot body v0
+（`godot/`，issue #11）已實作 body 端，Node daemon 仍嵌在 Electron main（#12／#15 抽出）。
+兩端正式拆分後升 v1.0／FROZEN。凍結後同 v 只允许 additive 變更
 （新增訊息／新增欄位），breaking 變更一律 v+1。
 
 ## 0. 定位與邊界
