@@ -16,6 +16,9 @@ Status：**CANDIDATE**。機器可讀契約與 contract test 已落地（見第 
 shape **绝不對外暴露、也不承載 MCP 訊息**。daemon 內部負責翻譯（MCP tool result → pet 反應
 → `say`；外部 MCP tool call → daemon → `say`／`pose.set`）。因此 body／ui 換殼不影響 MCP 合規。
 
+MCP server face 由 `daemon/mcp-server.js` 以標準 Streamable HTTP（127.0.0.1＋bearer token）
+實作，完全不經過本 WS；UI 只透過上面 `mcp.status`／`mcp.server.status` 看狀態。
+
 ## 1. 角色與連線
 
 - `brain`：Node daemon。WS server，預設 127.0.0.1:47821（設定可改）。擁有：設定、pet 狀態機、
@@ -101,6 +104,7 @@ shape **绝不對外暴露、也不承載 MCP 訊息**。daemon 內部負責翻�
 | --- | --- | --- | --- |
 | mcp.servers.get | ui→brain | (id) | reply {servers:[{name, transport, state, toolCount}]} |
 | mcp.status | brain→ui | servers | upstream 連線／工具數變化廣播 |
+| mcp.server.status | brain→ui | enabled, port, clients, tools | MCP server face（`daemon/mcp-server.js`）狀態：監聽埠、session 數、已實作 tool 名 |
 
 ## 5. 舊 preload channel 對照（遷移血統）
 

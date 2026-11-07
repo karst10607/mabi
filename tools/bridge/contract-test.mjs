@@ -1,9 +1,12 @@
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
+const require = createRequire(import.meta.url);
+const { TOOL_NAMES } = require(join(root, 'daemon', 'mcp-server.js'));
 const schema = JSON.parse(readFileSync(join(here, 'protocol.schema.json'), 'utf8'));
 const doc = readFileSync(join(root, 'docs', 'ws-protocol.md'), 'utf8');
 const preload = readFileSync(join(root, 'preload.js'), 'utf8');
@@ -200,6 +203,9 @@ const fixtures = {
   'mcp.status': [
     { form: 'event', msg: evt('mcp.status', { servers: [{ name: 'joplin', transport: 'streamable-http', state: 'ready', toolCount: 5 }] }) },
   ],
+  'mcp.server.status': [
+    { form: 'event', msg: evt('mcp.server.status', { enabled: true, port: 47822, clients: 1, tools: TOOL_NAMES }) },
+  ],
 };
 
 const invalidCases = [
@@ -377,6 +383,15 @@ check('preload keeps the renderer electronAPI surface', () => {
     'setRoamEnabled'
   ];
   for (const name of required) assert(preload.includes(name), `${name} missing from preload.js`);
+});
+
+check('mcp server face declares the implemented tools (issue #14)', () => {
+  const expected = ['pet.say', 'pet.mood.get', 'pet.ask', 'pet.ask.result', 'notes.search'];
+  assert(JSON.stringify(TOOL_NAMES) === JSON.stringify(expected), `daemon/mcp-server.js exposes ${TOOL_NAMES.join(', ')}`);
+  const fixture = fixtures['mcp.server.status'][0].msg;
+  assert(JSON.stringify(fixture.tools) === JSON.stringify(expected), 'mcp.server.status fixture tools differ from daemon');
+  assert(doc.includes('mcp.server.status'), 'docs section 4 is missing mcp.server.status');
+  return `${expected.length} tools`;
 });
 
 check('docs status is CANDIDATE and points to machine-readable contract', () => {

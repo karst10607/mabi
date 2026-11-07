@@ -408,6 +408,30 @@ document.addEventListener('DOMContentLoaded', () => {
   // ----------------------------------------------------------------
   // 3. Settings Modal Controller
   // ----------------------------------------------------------------
+  function renderMcpStatus() {
+    const el = document.getElementById('mcp-status');
+    if (!el) return;
+    const mcp = window.__AURAPET_MCP__;
+    if (!mcp) {
+      el.textContent = '此視窗由 Electron 提供，MCP face 只在 daemon UI 顯示。';
+      return;
+    }
+    const server = mcp.server;
+    const head = server && server.enabled
+      ? `已啟用 127.0.0.1:${server.port} · ${server.clients} 個 session`
+      : '未啟用';
+    const tools = server && server.tools && server.tools.length
+      ? ` · tools：${server.tools.join('、')}`
+      : '';
+    const upstreams = mcp.upstreams || [];
+    const up = upstreams.length
+      ? ` · 上游筆記 MCP：${upstreams.map((s) => `${s.name}（${s.state}）`).join('、')}`
+      : ' · 未設定上游筆記 MCP';
+    el.textContent = `${head}${tools}${up}`;
+  }
+
+  window.addEventListener('aurapet:mcp-status', renderMcpStatus);
+
   function openSettings() {
     // Populate form with current values
     selectAiProvider.value = ai.provider;
@@ -434,6 +458,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (skinRadio) skinRadio.checked = true;
 
     handleProviderFormVisibility();
+    renderMcpStatus();
     document.querySelector('.modal-body').scrollTop = 0;
     settingsModal.classList.remove('hidden');
     if (window.electronAPI && window.electronAPI.setUiBusy) {

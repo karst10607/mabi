@@ -117,6 +117,13 @@ daemon 在 `http://127.0.0.1:47830/` 提供現有 chat／設定 DOM（需 bridge
 「開啟對話／設定」會帶 token 開啟）。頁面關閉即零成本，設定與聊天都走 WS；舊 Electron
 `localStorage` 會在升級後一次性遷進 daemon config。細節見 `ui/README.md`。
 
+### 7. MCP server face（本機 AI 助理呼叫寵物）
+daemon 在 `http://127.0.0.1:47822/mcp` 提供標準 MCP Streamable HTTP（`mcpPort` 可覆寫），
+只綁 loopback、需 `Authorization: Bearer <mcpToken>`（0600 config），並檢查 Origin／Host
+allowlist。tools：`pet.say`、`pet.mood.get`、`pet.ask`＋`pet.ask.result`（非同步 ticket）、
+`notes.search`（聚合 `mcpUpstreams` 設定的上游筆記 MCP）。body 完全不知道 MCP 存在；
+設定頁「系統設定」可看 server／上游狀態。細節見 `daemon/README.md`。
+
 ---
 
 ## 📂 專案檔案結構
@@ -131,6 +138,7 @@ mabi/
 ├── godot/                # Godot body v0：透明視窗、rig、tray helper、probe
 ├── ui/                   # 按需 chat／設定頁的瀏覽器 shim
 ├── tools/bridge/         # 協議 schema、contract test、headless dev brain
+├── tools/mcp/            # MCP server face 端到端 smoke test
 ├── assets/               # 托盤圖示 (macOS template PNG + Win/Linux 彩色 PNG)
 ├── build/icon.png        # 應用程式圖示 (electron-builder 會轉成 .icns/.ico)
 ├── .github/workflows/    # GitHub Actions 遠端建置與 Release

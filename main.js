@@ -4,6 +4,7 @@ const fs = require('fs');
 const { createConfigStore } = require('./daemon/config-store');
 const { createBridgeServer } = require('./daemon/bridge-server');
 const { createUiServer, DEFAULT_UI_PORT } = require('./daemon/ui-server');
+const { createMcpServer, DEFAULT_MCP_PORT } = require('./daemon/mcp-server');
 
 app.commandLine.appendSwitch('disable-domain-blocking-for-3d-apis');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
@@ -48,6 +49,7 @@ let lastWalkFrameAt = 0;
 let clickThrough = false;
 let bridge = null;
 let uiServer = null;
+let mcpServer = null;
 
 const configStore = createConfigStore({ dir: app.getPath('userData') });
 
@@ -714,7 +716,17 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     bridge = createBridgeServer({ configStore, brainVersion: app.getVersion() });
     registerBridgeIpc();
-    bridge.start().catch((err) => {
+    bridge.start().then(() => {
+      mcpServer = createMcpServer({
+        configStore,
+        bridge,
+        port: Number(configStore.get('mcpPort')) || DEFAULT_MCP_PORT
+      });
+      mcpServer.start().catch((err) => {
+        logCrash(`mcp server failed to start: ${err.message}`);
+        console.warn('MCP server failed to start:', err.message);
+      });
+    }).catch((err) => {
       logCrash(`bridge server failed to start: ${err.message}`);
       console.warn('Bridge server failed to start:', err.message);
     });
@@ -741,6 +753,7 @@ app.on('before-quit', () => {
   stopWalk();
   if (currentMode === 'pet') savePetPosition();
   if (uiServer) uiServer.stop();
+  if (mcpServer) mcpServer.stop();
   if (bridge) bridge.stop();
 });
 
