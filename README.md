@@ -107,6 +107,11 @@ npm start
 
 macOS 建置會明確關閉簽名（`CSC_IDENTITY_AUTO_DISCOVERY=false`），所以不需要 Developer ID 也能完成打包。
 
+### 5. Godot body v0（v2 遷移中）
+Epic #7 的 body 實作在 `godot/`：透明視窗、rig、tray、roam 改由 Godot 4.7 執行，只透過
+`docs/ws-protocol.md` 連 Node daemon。Godot 4.7.2 binary 不進 repo；啟動方式、Linux tray
+helper（Ayatana AppIndicator）與 CPU/RSS 量測見 `godot/README.md`。
+
 ---
 
 ## 📂 專案檔案結構
@@ -117,6 +122,9 @@ mabi/
 ├── .nvmrc                # 建置用 Node 版本
 ├── main.js               # Electron 主進程 (透明無邊框視窗、托盤選單、全域快捷鍵、IPC 通信)
 ├── preload.js            # 安全的 ContextBridge API 注入
+├── daemon/               # brain 模組：config store、pet state、AI service、WS bridge
+├── godot/                # Godot body v0：透明視窗、rig、tray helper、probe
+├── tools/bridge/         # 協議 schema、contract test、headless dev brain
 ├── assets/               # 托盤圖示 (macOS template PNG + Win/Linux 彩色 PNG)
 ├── build/icon.png        # 應用程式圖示 (electron-builder 會轉成 .icns/.ico)
 ├── .github/workflows/    # GitHub Actions 遠端建置與 Release

@@ -2,6 +2,22 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.6.0] - 2026-11-07
+
+### Added
+
+- **Godot body v0（Epic #7 / #11）**：新增 `godot/` 專案，把透明寵物視窗從 Electron/Chromium 搬到 Godot 4.7.2——73×149 skinned rig（`rig_2d.gd`＋shader）、cat2d 六套姿勢素材（sit／walk／run／side／belly／rest）、WS client（hello／state.sync／mode／window／roam／pose／react／say／sound／ping）、透明置頂、click-through（`window_set_mouse_passthrough`）、tray、螢幕邊緣 roam、`needsFastFrame`＋lowproc 閘控。body 只透過 `docs/ws-protocol.md` 與 brain 通訊。
+- **Linux tray helper**：Godot 4.7 的 `DisplayServer` status indicator 只實作於 Windows／macOS，Linux 改由 `godot/tray_helper.py`（Ayatana AppIndicator，stdlib WebSocket client）以 `ui` 角色連上同一 bridge；tray 動作全部走協議訊息。
+- **Headless 開發／量測工具**：`tools/bridge/dev-brain.mjs`（不開 Electron 的 brain）與 `godot/probe-body.sh`（序列 idle／walk CPU／RSS）。實測 Linux／X11：idle 11%／walk 17%／241–242 MB，對照 Electron 36%／62%／679 MB。
+
+### Changed
+
+- `daemon/bridge-server.js` 的 `state.sync` 補齊契約要求的 `posture`／`skin`／`nickname`（預設 sit／cat2d／空字串），body 重連可完整恢復畫面狀態。
+
+### Known limitations
+
+- body v0 尚無全域熱鍵（Godot 無跨平台 API，先以 tray／點擊寵物替代）、TTS／音效素材、chat／設定頁（#12）；X11 HiDPI 下視窗是 240×290 實體像素（probe 基準），Electron 則是 DIP。
+
 ## [1.5.2] - 2026-10-26
 
 ### Fixed

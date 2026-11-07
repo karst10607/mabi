@@ -38,6 +38,9 @@ function createBridgeServer(options = {}) {
   const session = crypto.randomBytes(8).toString('hex');
   const state = {
     mode: 'pet',
+    posture: configStore.get('posture') || 'sit',
+    skin: configStore.get('skin') || 'cat2d',
+    nickname: configStore.get('nickname') || '',
     roamEnabled: configStore.get('roamEnabled') === true,
     uiBusy: false,
     visible: true,
@@ -154,6 +157,9 @@ function createBridgeServer(options = {}) {
       reply(ws, msg.id, { session, protocol: PROTOCOL_VERSION, brainVersion });
       emit(ws, 'state.sync', {
         mode: state.mode,
+        posture: state.posture,
+        skin: state.skin,
+        nickname: state.nickname,
         roamEnabled: state.roamEnabled,
         visibility: state.visible,
         clickThrough: state.clickThrough,
