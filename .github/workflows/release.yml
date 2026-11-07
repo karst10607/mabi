@@ -150,7 +150,9 @@ jobs:
             # The .tpz stores the template files directly under templates/.
             mv /tmp/godot-templates/templates/* "$TPL_DIR/"
           fi
-          echo "GODOT_BIN=$BIN" >> "$GITHUB_ENV"
+          # Git Bash paths (/c/...) are not valid to Node on Windows.
+          if command -v cygpath >/dev/null; then BIN_FOR_ENV="$(cygpath -w "$BIN")"; else BIN_FOR_ENV="$BIN"; fi
+          echo "GODOT_BIN=$BIN_FOR_ENV" >> "$GITHUB_ENV"
 
       - name: Install runtime dependencies
         run: npm ci --omit=dev --ignore-scripts
