@@ -2,6 +2,20 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.8.0] - 2026-11-07
+
+### Added
+
+- **MCP server face（Epic #7 / #14）**：新增 `daemon/mcp-server.js`，以標準 MCP Streamable HTTP（JSON-RPC 2.0）在 `127.0.0.1:47822/mcp`（config `mcpPort` 可覆寫）提供 pet tools。只綁 loopback、`Authorization: Bearer <mcpToken>`（0600 config）、Origin／Host allowlist、`Mcp-Session-Id` session 管理；capabilities 只宣告實作項（`tools`）。
+- **MCP tools**：`pet.say`（轉 `say` WS 事件，body 顯示氣泡）、`pet.mood.get`（brain 狀態快照）、`pet.ask`＋`pet.ask.result`（非同步 ticket，避開 60s tool timeout）、`notes.search`（聚合 config `mcpUpstreams` 的上游 Streamable HTTP 筆記 MCP，總預算 ≤4.5s）。body 完全不感知 MCP。
+- 協議 v1 additive：`mcp.server.status`（brain→ui：enabled／port／clients／tools）；設定頁「系統設定」顯示 MCP server 與上游狀態。contract test 增至 15 項，並比對 daemon 實作與契約的 tool 清單。
+- `tools/mcp/smoke-test.mjs`：以 stub body／ui／上游端到端驗證 initialize、tools/list、pet.say 氣泡、pet.mood.get、pet.ask ticket、notes.search 聚合、401／403、session 生命週期（CI `checks` 會跑）。
+
+### Changed
+
+- `daemon/bridge-server.js` 暴露 `say()`／`isBodyConnected()`／`setMcpStatus()` 給 MCP face，實作 `mcp.servers.get`，支援 port 0（ephemeral，測試用）；`tools/bridge/dev-brain.mjs` 新增 `--mcp-port`。
+- `checks` workflow 的 JS 語法檢查納入 `tools/mcp/*.mjs`，並新增 MCP smoke test（`npm ci --omit=dev --ignore-scripts`，不抓 Electron）。
+
 ## [1.7.0] - 2026-11-07
 
 ### Added

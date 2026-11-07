@@ -11,6 +11,7 @@ the WS bridge (#10) and the Godot body (#11) land later.
 | `config-store.js` | Node only | Single writer for `app-settings.json`: atomic write (tmp + rename + fsync), `0600` mode, one-time `.bak` of the pre-migration file. Same flat schema as v1.5.2 plus `schemaVersion`. Also stores the bridge `bridgeToken` (0600). |
 | `bridge-server.js` | Node only (`ws`) | Body↔daemon WS server, protocol v1 subset: hello/token, state.sync, mode, window, roam, interaction/react, ui.busy, ping. Owns brain state (mode, roam schedule) and validates the loopback token. |
 | `ui-server.js` | Node only | Serves the existing renderer DOM as an on-demand localhost page (bridge token required, cookie/query), reusing `renderer/` and injecting the config snapshot for the browser shim. |
+| `mcp-server.js` | Node only | MCP server face: standard Streamable HTTP JSON-RPC on `127.0.0.1` (default `47822/mcp`) with bearer token, Origin/Host allowlist and session tracking. Tools translate to brain state / WS (`pet.say`, `pet.mood.get`, `pet.ask`＋`pet.ask.result`, `notes.search`). |
 | `pet-state.js` | UMD (Node + browser) | Pure pet-state rules: affection/energy clamps, 10-point energy floor, posture order, pat/feed/play wake-up, idle → doze/sleep drift. No DOM, no storage, no timers. |
 | `ai-service.js` | UMD (Node + browser) | AI provider clients (builtin/openai/gemini/claude/ollama/custom). Config is read through an injected adapter (`get(key)` / `set(key, value)`), never through a global directly. |
 
@@ -69,6 +70,39 @@ settings go through `chat.send` / `chat.delta` / `chat.done` / `chat.error` /
 `chat.abort` and `settings.get` / `settings.set` / `settings.changed`.
 `AIService` runs in the daemon with the file-backed config store; the browser
 only renders. Closing the page removes its WS and renderer.
+
+## MCP server face (issue #14)
+
+`mcp-server.js` exposes the pet to local MCP clients (Qoder, MCP Inspector, ...)
+over the standard **Streamable HTTP** transport — JSON-RPC 2.0 POSTs, no
+private WS and no MCP details visible to the body.
+
+- Endpoint: `http://127.0.0.1:47822/mcp` (config `mcpPort`).
+- Auth: `Authorization: Bearer <mcpToken>`; the token is generated once into
+  the 0600 config file. Missing/wrong token → HTTP 401, non-loopback
+  `Origin`/`Host` → HTTP 403. Loopback web origins get CORS headers.
+- Sessions: `Mcp-Session-Id` is issued on `initialize`; unknown ids → 404,
+  `DELETE` terminates one, `GET` (no server-initiated SSE) → 405.
+- Capabilities declare only `tools` (`listChanged: false`).
+
+| tool | behaviour |
+| --- | --- |
+| `pet.say` | translates to the `say` WS event; returns `delivered=false` (tool error) when the body is offline |
+| `pet.mood.get` | brain snapshot: mode/posture/skin/nickname/roam/visibility/bodyConnected |
+| `pet.ask` | starts the AI answer in the background and returns `{ticket, state:"pending"}` immediately (no 60s tool timeout) |
+| `pet.ask.result` | polls a ticket: `pending` / `done` (with `answer`) / `error` |
+| `notes.search` | aggregates upstream note MCP servers configured in `mcpUpstreams` (`[{name, url, token?, transport?}]`, Streamable HTTP), bounded to ≤4.5s total |
+
+`notes.search` has no upstreams by default and says so explicitly. Its
+aggregation is generic HTTP MCP, so it works with any compliant notes server;
+the UI only reads `mcp.servers.get` / `mcp.status` / `mcp.server.status`.
+
+`tools/mcp/smoke-test.mjs` drives the whole face against a stub body, stub UI
+and stub upstream (no external services):
+
+```bash
+node tools/mcp/smoke-test.mjs
+```
 
 ## Config file
 

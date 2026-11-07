@@ -396,6 +396,21 @@
           }
         }
       }
+    },
+    "mcp.server.status": {
+      "dir": ["brain>ui"],
+      "forms": ["event"],
+      "required": ["enabled", "port", "clients", "tools"],
+      "fields": {
+        "enabled": { "type": "boolean" },
+        "port": { "type": "integer", "minimum": 0 },
+        "clients": { "type": "integer", "minimum": 0 },
+        "tools": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Implemented MCP tool names (daemon/mcp-server.js)"
+        }
+      }
     }
   },
   "legacyChannels": {

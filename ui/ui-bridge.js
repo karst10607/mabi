@@ -31,6 +31,8 @@
   let reconnectDelay = 1000;
   let knownMode = 'chat';
   let roamEnabled = false;
+  const mcp = { server: null, upstreams: [] };
+  window.__AURAPET_MCP__ = mcp;
   const pending = new Map();
   const queue = [];
   const listeners = {
@@ -184,6 +186,19 @@
         return;
       case 'settings.changed':
         applySettingPatch(message.patch);
+        return;
+      case 'mcp.status':
+        mcp.upstreams = Array.isArray(message.servers) ? message.servers : [];
+        window.dispatchEvent(new CustomEvent('aurapet:mcp-status'));
+        return;
+      case 'mcp.server.status':
+        mcp.server = {
+          enabled: Boolean(message.enabled),
+          port: Number.isInteger(message.port) ? message.port : 0,
+          clients: Number.isInteger(message.clients) ? message.clients : 0,
+          tools: Array.isArray(message.tools) ? message.tools : []
+        };
+        window.dispatchEvent(new CustomEvent('aurapet:mcp-status'));
         return;
       case 'chat.delta':
         if (activeStream) activeStream.onChunk(String(message.text || ''));

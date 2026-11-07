@@ -29,10 +29,11 @@ function ensureToken(store) {
 function createBridgeServer(options = {}) {
   const {
     configStore,
-    port = DEFAULT_PORT,
+    port: configuredPort = DEFAULT_PORT,
     brainVersion = '0.0.0',
     log = console
   } = options;
+  let port = configuredPort;
   if (!configStore) throw new TypeError('createBridgeServer requires a config store');
 
   const token = ensureToken(configStore);
@@ -60,6 +61,7 @@ function createBridgeServer(options = {}) {
   let body = null;
   const uiClients = new Set();
   let roamTimer = null;
+  let mcpStatus = { enabled: false, port: 0, clients: 0, tools: [] };
 
   const send = (ws, message) => {
     if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ v: PROTOCOL_VERSION, ...message }));
@@ -70,6 +72,44 @@ function createBridgeServer(options = {}) {
   const toUi = (t, payload = {}) => {
     for (const client of uiClients) emit(client, t, payload);
   };
+
+  function isBodyConnected() {
+    return Boolean(body) && body.readyState === body.OPEN;
+  }
+
+  // MCP face → WS translation. Returns whether the body actually received it.
+  function say(payload = {}) {
+    if (!isBodyConnected()) return false;
+    emit(body, 'say', payload);
+    return true;
+  }
+
+  function setMcpStatus(patch = {}) {
+    mcpStatus = { ...mcpStatus, ...patch };
+    toUi('mcp.server.status', mcpStatus);
+    return mcpStatus;
+  }
+
+  function upstreamServers() {
+    const raw = configStore.get('mcpUpstreams');
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    const seen = new Set();
+    for (const entry of raw) {
+      if (!entry || typeof entry !== 'object') continue;
+      const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+      const url = typeof entry.url === 'string' ? entry.url.trim() : '';
+      if (!name || !url || seen.has(name)) continue;
+      seen.add(name);
+      out.push({
+        name,
+        transport: entry.transport === 'stdio' ? 'stdio' : 'streamable-http',
+        state: 'configured',
+        toolCount: 0
+      });
+    }
+    return out;
+  }
 
   function clearRoamTimer() {
     if (roamTimer) {
@@ -250,6 +290,8 @@ function createBridgeServer(options = {}) {
     uiClients.add(ws);
     reply(ws, msg.id, { session, protocol: PROTOCOL_VERSION, brainVersion });
     emit(ws, 'state.sync', { mode: state.mode, roamEnabled: state.roamEnabled });
+    emit(ws, 'mcp.status', { servers: upstreamServers() });
+    emit(ws, 'mcp.server.status', mcpStatus);
   }
 
   function handleWindowSet(ws, msg) {
@@ -350,6 +392,12 @@ function createBridgeServer(options = {}) {
         return;
       case 'settings.set':
         applySettings(ws, msg);
+        if (msg.patch && Object.hasOwn(msg.patch, 'mcpUpstreams')) {
+          toUi('mcp.status', { servers: upstreamServers() });
+        }
+        return;
+      case 'mcp.servers.get':
+        if (id != null) reply(ws, id, { servers: upstreamServers() });
         return;
       case 'activity':
         if (canRoam()) scheduleRoam(randomBetween(5000, 9000));
@@ -405,11 +453,16 @@ function createBridgeServer(options = {}) {
   }
 
   return {
-    port,
+    get port() {
+      return port;
+    },
     token,
     getState() {
       return { ...state };
     },
+    isBodyConnected,
+    say,
+    setMcpStatus,
     setRoamEnabled(enabled) {
       return setRoamEnabled(enabled);
     },
@@ -417,6 +470,7 @@ function createBridgeServer(options = {}) {
       return new Promise((resolve, reject) => {
         wss = new WebSocketServer({ host: '127.0.0.1', port });
         wss.once('listening', () => {
+          port = wss.address().port;
           log.info(`bridge: listening on ws://127.0.0.1:${port}`);
           resolve({ port });
         });

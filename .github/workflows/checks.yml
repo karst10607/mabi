@@ -17,7 +17,7 @@ jobs:
       - name: JS syntax
         run: |
           set -e
-          for f in main.js preload.js renderer/*.js daemon/*.js tools/bridge/*.mjs; do
+          for f in main.js preload.js renderer/*.js daemon/*.js tools/bridge/*.mjs tools/mcp/*.mjs; do
             if [ -f "$f" ]; then node --check "$f"; fi
           done
       - name: Shell syntax
@@ -36,4 +36,13 @@ jobs:
             node tools/bridge/contract-test.mjs
           else
             echo "contract test not present yet (issue 1)"
+          fi
+      - name: MCP smoke test
+        run: |
+          if [ -f tools/mcp/smoke-test.mjs ]; then
+            # ws is a runtime dependency; skip lifecycle scripts (no Electron download).
+            npm ci --omit=dev --ignore-scripts
+            node tools/mcp/smoke-test.mjs
+          else
+            echo "MCP smoke test not present yet (issue 14)"
           fi
