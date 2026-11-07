@@ -15,15 +15,17 @@
 
 ## 2. 自動 loop 契約
 
-1. 每輪只做**一個** issue。
+1. 一次只允許一個 agent session 動這個 repo。每輪開始先檢查：若有 label `agent-working`
+   且 `updatedAt` 在 30 分鐘內的 issue，視為另一個 session 正在跑——本輪直接結束，
+   不做任何 git 操作。
 2. 選題：open、label `agent-ready`、body 的 `Blocked by` 所列 issue 全數關閉、編號最小者。
    沒有就停——**不要自己開新 issue**。
-3. 開工：label 換 `agent-working`，在 issue 留言一行計畫（做什麼、怎麼驗）。
+3. 開工：label 換 `agent-working`，在 issue 留言一行計畫。
 4. 分支 `agent/issue-<N>`；完成後 push、開 PR（body 寫 `Closes #N`＋驗證證據）。
-5. `checks` CI 綠 → squash merge 回 main；紅兩次 → label `agent-blocked`、留言原因、停。
-6. 收尾：在 issue 貼驗證證據（指令＋輸出摘要：測試 exit code、CPU/RSS 數字、截圖路徑），
-   然後關閉。
-7. 卡住（需硬體／需使用者決策／上游 repo）→ `agent-blocked`＋`needs-human`，不要硬做。
+5. `checks` CI 綠 → squash merge 回 main；紅兩次 → label `agent-blocked`、留言原因、跳過該題。
+6. 收尾：issue 貼證據後關閉、移除 `agent-working`。**接著回到第 2 步取下一個題，
+   直到沒有可做的題或本輪累計 90 分鐘**；結束時彙報本輪完成的全部 issue。
+7. 卡住（需硬體／需使用者決策／上游 repo）→ `agent-blocked`＋`needs-human`，跳過該題繼續。
 8. 禁止：發 release／打 tag、force push、改 git config、動系統設定、提交 secrets。
 
 ## 3. 驗證指令（issue 的 DoD 一律引用這些）
