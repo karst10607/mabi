@@ -1,6 +1,9 @@
 #!/bin/bash
 # Godot transparent-window probe：CPU/RSS at given damage rates.
 # 用法：./probe-godot.sh [14 30]
+#   EXTRA=--lowproc            事件驅動 idle
+#   SCENE=res://fullrig.tscn   改量 full-rig（skinning shader＋步態）
+#   EXTRA="--walk --lowproc"   full-rig 走路模式
 # pgrep 用 ^ anchor 只命中 Godot 本體（wrapper cmdline 以 /bin/bash 開頭）。
 set -u
 cd "$(dirname "$0")"
@@ -10,7 +13,9 @@ RATES=("$@")
 for RATE in "${RATES[@]}"; do
   pkill -f "^[.]/Godot_v4.7.2" 2>/dev/null
   sleep 2
-  nohup "$BIN" --path . -- --rate="$RATE" ${EXTRA:-} > "/tmp/godot-probe-$RATE.log" 2>&1 &
+  RATE_ARG=(--rate="$RATE")
+  [ "$RATE" = "adaptive" ] && RATE_ARG=()
+  nohup "$BIN" --path . ${SCENE:-} -- "${RATE_ARG[@]}" ${EXTRA:-} > "/tmp/godot-probe-$RATE.log" 2>&1 &
   sleep 10
   P=$(pgrep -f "^[.]/Godot_v4.7.2" | head -1)
   if [ -z "$P" ]; then
