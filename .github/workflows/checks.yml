@@ -1,0 +1,39 @@
+name: checks
+
+# Cheap static feedback for the agent loop. Runtime probes (transparent window,
+# CPU/RSS) cannot run here: GitHub runners have no X11/GPU — keep those local.
+on:
+  push:
+  pull_request:
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: JS syntax
+        run: |
+          set -e
+          for f in main.js preload.js renderer/*.js daemon/*.js tools/bridge/*.mjs; do
+            if [ -f "$f" ]; then node --check "$f"; fi
+          done
+      - name: Shell syntax
+        run: |
+          set -e
+          while IFS= read -r f; do bash -n "$f"; done < <(find . -name '*.sh' -not -path './node_modules/*')
+      - name: JSON manifests
+        run: |
+          set -e
+          for f in renderer/models/*/*.json; do
+            if [ -f "$f" ]; then node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" "$f"; fi
+          done
+      - name: Bridge contract
+        run: |
+          if [ -f tools/bridge/contract-test.mjs ]; then
+            node tools/bridge/contract-test.mjs
+          else
+            echo "contract test not present yet (issue 1)"
+          fi
