@@ -1,0 +1,413 @@
+{
+  "format": "aurapet-bridge-contract/1",
+  "protocol": 1,
+  "title": "AuraPet bridge protocol v1 contract",
+  "doc": "docs/ws-protocol.md",
+  "envelope": {
+    "version": 1,
+    "unknownFields": "ignored",
+    "forms": {
+      "request": {
+        "required": ["v", "id", "t"]
+      },
+      "reply": {
+        "required": ["v", "id", "ok"]
+      },
+      "event": {
+        "required": ["v", "t"]
+      }
+    },
+    "error": {
+      "required": ["code", "message"],
+      "fields": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string" }
+      }
+    }
+  },
+  "messages": {
+    "hello": {
+      "dir": ["body>brain", "ui>brain"],
+      "forms": ["request"],
+      "required": ["role", "name", "version", "protocol", "token"],
+      "fields": {
+        "role": { "type": "string", "enum": ["body", "ui"] },
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string" },
+        "protocol": { "type": "integer", "minimum": 1 },
+        "token": { "type": "string", "minLength": 1 }
+      }
+    },
+    "hello-ack": {
+      "dir": ["brain>body", "brain>ui"],
+      "forms": ["reply"],
+      "reply": {
+        "required": ["session", "protocol", "brainVersion"],
+        "fields": {
+          "session": { "type": "string", "minLength": 1 },
+          "protocol": { "type": "integer", "minimum": 1 },
+          "brainVersion": { "type": "string" }
+        }
+      }
+    },
+    "state.sync": {
+      "dir": ["brain>body"],
+      "forms": ["event"],
+      "required": [
+        "mode",
+        "posture",
+        "skin",
+        "nickname",
+        "roamEnabled",
+        "visibility",
+        "clickThrough",
+        "alwaysOnTop"
+      ],
+      "fields": {
+        "mode": { "type": "string", "enum": ["pet", "chat"] },
+        "posture": { "type": "string", "enum": ["sit", "doze", "rest", "sleep", "walk"] },
+        "skin": { "type": "string" },
+        "nickname": { "type": "string" },
+        "roamEnabled": { "type": "boolean" },
+        "visibility": { "type": "boolean" },
+        "clickThrough": { "type": "boolean" },
+        "alwaysOnTop": { "type": "boolean" }
+      }
+    },
+    "ping": {
+      "dir": ["body>brain", "brain>body", "ui>brain", "brain>ui"],
+      "forms": ["event"],
+      "required": ["ts"],
+      "fields": {
+        "ts": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "pong": {
+      "dir": ["body>brain", "brain>body", "ui>brain", "brain>ui"],
+      "forms": ["event"],
+      "required": ["ts"],
+      "fields": {
+        "ts": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "bye": {
+      "dir": ["body>brain", "brain>body", "ui>brain", "brain>ui"],
+      "forms": ["event"],
+      "required": ["reason"],
+      "fields": {
+        "reason": { "type": "string" }
+      }
+    },
+    "mode.request": {
+      "dir": ["ui>brain"],
+      "forms": ["request"],
+      "required": ["mode"],
+      "fields": {
+        "mode": { "type": "string", "enum": ["pet", "chat"] }
+      }
+    },
+    "mode.toggle": {
+      "dir": ["body>brain", "ui>brain"],
+      "forms": ["event"]
+    },
+    "mode.set": {
+      "dir": ["brain>body"],
+      "forms": ["event"],
+      "required": ["mode"],
+      "fields": {
+        "mode": { "type": "string", "enum": ["pet", "chat"] }
+      }
+    },
+    "mode.changed": {
+      "dir": ["body>brain", "brain>ui"],
+      "forms": ["event"],
+      "required": ["mode"],
+      "fields": {
+        "mode": { "type": "string", "enum": ["pet", "chat"] }
+      }
+    },
+    "window.set": {
+      "dir": ["ui>brain"],
+      "forms": ["request"],
+      "fields": {
+        "alwaysOnTop": { "type": "boolean" },
+        "clickThrough": { "type": "boolean" },
+        "forward": { "type": "boolean" },
+        "visible": { "type": "boolean" }
+      }
+    },
+    "window.apply": {
+      "dir": ["brain>body"],
+      "forms": ["event"],
+      "fields": {
+        "alwaysOnTop": { "type": "boolean" },
+        "clickThrough": { "type": "boolean" },
+        "forward": { "type": "boolean" },
+        "visible": { "type": "boolean" }
+      }
+    },
+    "window.state": {
+      "dir": ["body>brain", "brain>ui"],
+      "forms": ["event"],
+      "required": ["alwaysOnTop", "clickThrough", "visible", "x", "y"],
+      "fields": {
+        "alwaysOnTop": { "type": "boolean" },
+        "clickThrough": { "type": "boolean" },
+        "visible": { "type": "boolean" },
+        "x": { "type": "integer" },
+        "y": { "type": "integer" }
+      }
+    },
+    "window.minimize": {
+      "dir": ["ui>brain", "brain>body"],
+      "forms": ["event"]
+    },
+    "window.close": {
+      "dir": ["ui>brain", "brain>body"],
+      "forms": ["event"]
+    },
+    "roam.get": {
+      "dir": ["ui>brain"],
+      "forms": ["request"],
+      "reply": {
+        "required": ["enabled"],
+        "fields": {
+          "enabled": { "type": "boolean" }
+        }
+      }
+    },
+    "roam.set-enabled": {
+      "dir": ["ui>brain"],
+      "forms": ["event"],
+      "required": ["enabled"],
+      "fields": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "roam.enabled": {
+      "dir": ["brain>body", "brain>ui"],
+      "forms": ["event"],
+      "required": ["enabled"],
+      "fields": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "roam.command": {
+      "dir": ["brain>body"],
+      "forms": ["event"],
+      "required": ["action"],
+      "fields": {
+        "action": { "type": "string", "enum": ["start", "stop", "park"] },
+        "dir": { "type": "string", "enum": ["left", "right"] },
+        "target": {
+          "type": "object",
+          "required": ["x", "y"],
+          "fields": {
+            "x": { "type": "integer" },
+            "y": { "type": "integer" }
+          }
+        }
+      }
+    },
+    "roam.state": {
+      "dir": ["body>brain", "brain>ui"],
+      "forms": ["event"],
+      "required": ["state", "x", "y"],
+      "fields": {
+        "state": { "type": "string", "enum": ["idle", "walk-left", "walk-right"] },
+        "x": { "type": "integer" },
+        "y": { "type": "integer" }
+      }
+    },
+    "interaction": {
+      "dir": ["body>brain", "ui>brain"],
+      "forms": ["event"],
+      "required": ["kind", "source"],
+      "fields": {
+        "kind": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "open set: pat, feed, click, ..."
+        },
+        "source": { "type": "string", "enum": ["tray", "window", "ui"] }
+      }
+    },
+    "activity": {
+      "dir": ["body>brain"],
+      "forms": ["event"]
+    },
+    "react": {
+      "dir": ["brain>body"],
+      "forms": ["event"],
+      "required": ["kind", "emotion"],
+      "fields": {
+        "kind": { "type": "string", "minLength": 1 },
+        "emotion": { "type": "string", "minLength": 1 }
+      }
+    },
+    "say": {
+      "dir": ["brain>body"],
+      "forms": ["event"],
+      "required": ["text"],
+      "fields": {
+        "text": { "type": "string" },
+        "emotion": { "type": "string" },
+        "ttlMs": { "type": "integer", "minimum": 0 },
+        "speech": { "type": "boolean" }
+      }
+    },
+    "pose.set": {
+      "dir": ["brain>body"],
+      "forms": ["event"],
+      "required": ["posture"],
+      "fields": {
+        "posture": { "type": "string", "enum": ["sit", "doze", "rest", "sleep", "walk"] },
+        "skin": { "type": "string" }
+      }
+    },
+    "sound.play": {
+      "dir": ["brain>body"],
+      "forms": ["event"],
+      "required": ["clip"],
+      "fields": {
+        "clip": { "type": "string", "minLength": 1 }
+      }
+    },
+    "ui.busy": {
+      "dir": ["ui>brain"],
+      "forms": ["event"],
+      "required": ["busy"],
+      "fields": {
+        "busy": { "type": "boolean" }
+      }
+    },
+    "chat.send": {
+      "dir": ["ui>brain"],
+      "forms": ["event"],
+      "required": ["text"],
+      "fields": {
+        "text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "chat.delta": {
+      "dir": ["brain>ui"],
+      "forms": ["event"],
+      "required": ["text"],
+      "fields": {
+        "text": { "type": "string" }
+      }
+    },
+    "chat.done": {
+      "dir": ["brain>ui"],
+      "forms": ["event"],
+      "required": ["full"],
+      "fields": {
+        "full": { "type": "string" }
+      }
+    },
+    "chat.error": {
+      "dir": ["brain>ui"],
+      "forms": ["event"],
+      "required": ["error"],
+      "fields": {
+        "error": { "type": "string", "minLength": 1 }
+      }
+    },
+    "settings.get": {
+      "dir": ["ui>brain"],
+      "forms": ["request"],
+      "reply": {
+        "required": ["patch"],
+        "fields": {
+          "patch": { "type": "object" }
+        }
+      }
+    },
+    "settings.set": {
+      "dir": ["ui>brain"],
+      "forms": ["request"],
+      "required": ["patch"],
+      "fields": {
+        "patch": { "type": "object" }
+      },
+      "reply": {
+        "required": ["patch"],
+        "fields": {
+          "patch": { "type": "object" }
+        }
+      }
+    },
+    "settings.changed": {
+      "dir": ["brain>ui"],
+      "forms": ["event"],
+      "required": ["patch"],
+      "fields": {
+        "patch": { "type": "object" }
+      }
+    },
+    "mcp.servers.get": {
+      "dir": ["ui>brain"],
+      "forms": ["request"],
+      "reply": {
+        "required": ["servers"],
+        "fields": {
+          "servers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "transport", "state", "toolCount"],
+              "fields": {
+                "name": { "type": "string", "minLength": 1 },
+                "transport": {
+                  "type": "string",
+                  "description": "stdio or streamable-http"
+                },
+                "state": { "type": "string" },
+                "toolCount": { "type": "integer", "minimum": 0 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "mcp.status": {
+      "dir": ["brain>ui"],
+      "forms": ["event"],
+      "required": ["servers"],
+      "fields": {
+        "servers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "transport", "state", "toolCount"],
+            "fields": {
+              "name": { "type": "string", "minLength": 1 },
+              "transport": {
+                "type": "string",
+                "description": "stdio or streamable-http"
+              },
+              "state": { "type": "string" },
+              "toolCount": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    }
+  },
+  "legacyChannels": {
+    "switch-mode": ["mode.request", "mode.set"],
+    "mode-changed": ["mode.changed"],
+    "toggle-mode-request": ["mode.toggle", "mode.set"],
+    "set-always-on-top": ["window.set", "window.apply"],
+    "minimize-app": ["window.minimize"],
+    "close-app": ["window.close"],
+    "set-ignore-mouse-events": ["window.set", "window.apply"],
+    "pet-interaction": ["interaction", "react"],
+    "pet-activity": ["activity"],
+    "roam-state": ["roam.state", "roam.command"],
+    "window-visibility": ["window.state"],
+    "set-ui-busy": ["ui.busy"],
+    "get-roam-enabled": ["roam.get"],
+    "set-roam-enabled": ["roam.set-enabled", "roam.enabled"]
+  }
+}
