@@ -1,7 +1,8 @@
-# AuraPet Bridge Protocol（WS）草案 v0.1
+# AuraPet Bridge Protocol（WS）v0.1
 
-Status：**DRAFT**（未凍結）。凍結條件：Godot body 與 Node daemon 兩端實作落地後升 v1.0；
-凍結後同 v 只允许 additive 變更（新增訊息／新增欄位），breaking 變更一律 v+1。
+Status：**CANDIDATE**。機器可讀契約與 contract test 已落地（見第 6 節）；Godot body 與
+Node daemon 兩端實作落地後升 v1.0／FROZEN。凍結後同 v 只允许 additive 變更
+（新增訊息／新增欄位），breaking 變更一律 v+1。
 
 ## 0. 定位與邊界
 
@@ -34,6 +35,7 @@ shape **绝不對外暴露、也不承載 MCP 訊息**。daemon 內部負責翻�
 
 - 收到未知 `t`：有 id 回 error `unknown-type`；無 id 記 log 忽略（forward compat）。
 - 未知欄位一律忽略（additive 規則）。
+- reply 以 `id` 對應請求、不重複帶 `t`；payload 型別由 pending id 決定。
 
 ## 3. 生命週期
 
@@ -94,7 +96,7 @@ shape **绝不對外暴露、也不承載 MCP 訊息**。daemon 內部負責翻�
 ### mcp（只走 ui↔brain；body 永远看不到 MCP 細節）
 | t | 方向 | 欄位 | 語意 |
 | --- | --- | --- | --- |
-| mcp.servers.get | ui→brain | (id) | reply [{name, transport, state, toolCount}] |
+| mcp.servers.get | ui→brain | (id) | reply {servers:[{name, transport, state, toolCount}]} |
 | mcp.status | brain→ui | servers | upstream 連線／工具數變化廣播 |
 
 ## 5. 舊 preload channel 對照（遷移血統）
@@ -105,9 +107,10 @@ shape **绝不對外暴露、也不承載 MCP 訊息**。daemon 內部負責翻�
 | mode-changed | mode.changed |
 | toggle-mode-request | mode.toggle → mode.set |
 | set-always-on-top | window.set → window.apply |
-| minimize-app / close-app | window.minimize / window.close |
+| minimize-app | window.minimize |
+| close-app | window.close |
 | set-ignore-mouse-events | window.set(clickThrough, forward) → window.apply |
-| pet-interaction (pat/feed) | interaction(source:tray) → react |
+| pet-interaction | interaction(source:tray, kind:pat/feed) → react |
 | pet-activity | activity |
 | roam-state | roam.state（改由 body 回報）＋ roam.command |
 | window-visibility | window.state(visible)（改由 body 回報） |
@@ -118,7 +121,17 @@ shape **绝不對外暴露、也不承載 MCP 訊息**。daemon 內部負責翻�
 方向翻轉備註：Electron 時代 main process 擁有視窗，故 roam-state／window-visibility 是
 main→renderer；新架構 body 擁有視窗，改為 body→brain 回報、brain 轉發 ui。
 
-## 6. 演化和凍結規則
+## 6. 機器可讀契約
+
+- 契約本體：`tools/bridge/protocol.schema.json`（envelope、全部 type、必填欄位、方向、
+  第 5 節 14 條舊 channel 對照）。
+- 驗證測試：`node tools/bridge/contract-test.mjs`（零依賴；exit 0 才算守約，`checks` CI 會跑）。
+- 驗證規則：request＝有 `id` 無 `ok`（`t` 必填且須允許 request）；reply＝有 `id` 有 `ok`
+  （以 pending id 對應請求型別驗 payload；`ok:false` 必帶 `error.code`／`error.message`）；
+  event＝無 `id`、`ok`；未知 `t` 無 id 忽略、有 id 回 `unknown-type`；未知欄位忽略。
+- 新增 type 時同步 schema／fixtures／本文件；測試會抓漏。同 v 只加不改，breaking 才 v+1。
+
+## 7. 演化和凍結規則
 
 - 同 v：只加訊息／欄位，不改語意、不刪欄位；接收端忽略未知。
 - breaking：v+1，hello 協商；brain 同時支援舊 v 一個過渡期。
