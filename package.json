@@ -1,19 +1,18 @@
 {
   "name": "aurapet-desktop",
-  "version": "1.11.0",
-  "description": "Cross-platform AI Desktop Pet & Companion (ChatGPT-style floating assistant)",
-  "main": "main.js",
+  "version": "1.12.0",
+  "description": "Cross-platform AI Desktop Pet & Companion (Godot 4.x Body + Node SEA Daemon + MCP)",
+  "main": "daemon/standalone.js",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron .",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
+    "start": "node daemon/standalone.js",
+    "test": "node tools/bridge/contract-test.mjs && node tools/mcp/smoke-test.mjs",
     "dist:linux": "node tools/dist/build-linux.mjs",
     "dist:win": "node tools/dist/build-win.mjs"
   },
   "keywords": [
     "desktop-pet",
-    "electron",
+    "godot",
+    "mcp",
     "ai-companion",
     "chatgpt",
     "cross-platform"
@@ -22,45 +21,6 @@
   "license": "MIT",
   "engines": {
     "node": ">=22.12.0"
-  },
-  "devDependencies": {
-    "electron": "^33.2.1",
-    "electron-builder": "^26.15.3"
-  },
-  "build": {
-    "appId": "com.antigravity.aurapet",
-    "productName": "AuraPet",
-    "files": [
-      "**/*",
-      "!renderer/models/pet.glb",
-      "!tools/**",
-      "!dist/**",
-      "!dist-new/**",
-      "!**/*.log"
-    ],
-    "mac": {
-      "category": "public.app-category.utilities",
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
-      "target": [
-        "dmg",
-        "zip"
-      ]
-    },
-    "win": {
-      "icon": "build/icon.png",
-      "target": [
-        "nsis",
-        "portable"
-      ]
-    },
-    "linux": {
-      "icon": "build/icon.png",
-      "target": [
-        "AppImage",
-        "deb"
-      ],
-      "category": "Utility"
-    }
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
