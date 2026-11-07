@@ -256,11 +256,18 @@ func _setup_tray() -> void:
 	print("tray: status indicator ready id=%d" % tray_id)
 
 func _spawn_tray_helper() -> void:
+	var exe_dir := OS.get_executable_path().get_base_dir()
 	var script := ProjectSettings.globalize_path("res://tray_helper.py")
+	# Exported builds have the pck embedded, so res:// has no real file on disk;
+	# the packaging step ships the helper next to the executable instead.
+	if not FileAccess.file_exists(script):
+		script = exe_dir.path_join("tray_helper.py")
 	if not FileAccess.file_exists(script):
 		print("tray: helper script missing: %s" % script)
 		return
 	var icon := ProjectSettings.globalize_path("res://icon.png")
+	if not FileAccess.file_exists(icon):
+		icon = exe_dir.path_join("icon.png")
 	tray_pid = OS.create_process("python3", PackedStringArray([
 		script,
 		"--port=%d" % port,

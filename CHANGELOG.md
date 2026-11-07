@@ -2,6 +2,19 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.9.0] - 2026-11-07
+
+### Added
+
+- **Linux 打包與 release 管線（Epic #7 / #15）**：`npm run dist:linux` 以 Godot 4.7.2 embedded-pck export＋Node SEA（esbuild bundle → `--experimental-sea-config` → postject）產出單檔 daemon，加上 launcher 組成 **AppImage** 與 **deb**（`dist/linux/`）。新增 `godot/export_presets.cfg`、`packaging/aurapet`、`packaging/aurapet.desktop`、`tools/dist/build-linux.mjs`。
+- `daemon/standalone.js`：不依賴 Electron 的 headless 入口（bridge／UI／MCP／config），供打包版與 CI smoke 使用。
+- Godot body tray helper 在 exported build 會改找執行檔旁的 `tray_helper.py`／`icon.png`（embedded pck 沒有實體 `res://` 檔案）。
+
+### Changed
+
+- `release.yml` 改為 Linux-first：`workflow_dispatch`（預設 `dry_run=true`）只建置並上傳 Actions Artifacts；人工 `v*` tag 才發 GitHub Release。Godot binary 與 export templates 以 Actions cache 保存；移除舊的 Electron macOS／Windows 建置。
+- README 打包章節改寫為 Godot export＋Node SEA 流程（electron-builder 僅保留舊版開發用）。
+
 ## [1.8.0] - 2026-11-07
 
 ### Added

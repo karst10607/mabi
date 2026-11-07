@@ -79,33 +79,34 @@ npm ci
 npm start
 ```
 
-### 3. 打包發布 (Win / Mac / Linux)
-專案預先配置好 `electron-builder`：
+### 3. 打包發布（Linux）
+v2 的 Linux 產物不再走 electron-builder：Godot body（embedded pck）＋ Node SEA
+daemon 單檔＋launcher，組成 AppImage 與 deb。
 
-- **打包為 macOS 應用程式 (.dmg / .zip)**（需在 macOS 上執行）：
-  ```bash
-  npm run dist -- --mac --x64     # Intel Mac
-  npm run dist -- --mac --arm64   # Apple Silicon
-  ```
-  不帶 `--x64`/`--arm64` 時，electron-builder 只會建置目前主機的架構。
-- **打包為 Windows 執行檔 (.exe / 免安裝版)**：
-  ```bash
-  npm run dist -- --win
-  ```
-- **打包為 Linux 應用程式 (.AppImage / .deb)**：
-  ```bash
-  npm run dist -- --linux
-  ```
+```bash
+nvm use
+npm ci
+npm run dist:linux      # → dist/linux/AuraPet-<version>-x86_64.AppImage、aurapet_<version>_amd64.deb
+```
 
-> 目前沒有 Apple Developer ID，macOS 產物是**未簽名、未公證**的。本機開啟可右鍵「打開」；若從網路下載，Gatekeeper 會提示無法驗證開發者。
+需要 Godot 4.7.2 editor binary（`GODOT_BIN=/path/to/Godot_v4.7.2-stable_linux.x86_64`，
+預設找 `~/桌面/godot-pet-probe/`）與 `mksquashfs`（squashfs-tools；本機若無會用
+electron-builder 快取）。AppImage runtime 缺少時自動下載。也可免安裝檢查 deb 佈局：
+
+```bash
+dpkg-deb -x dist/linux/aurapet_<version>_amd64.deb /tmp/aurapet-deb
+/tmp/aurapet-deb/usr/bin/aurapet
+```
+
+Windows／macOS 打包尚未遷移（見 #16）。
 
 ### 4. GitHub Actions 遠端建置
-`.github/workflows/release.yml` 支援：
+`.github/workflows/release.yml` 只建 Linux：
 
-- 在 Actions 頁面手動 `Run workflow`：建置 Windows 與 macOS x64 / arm64，產物放在 Actions Artifacts。
-- 推送 `v*` tag：除了建置，還會把 `.exe` / `.dmg` / `.zip` 上傳到 GitHub Release。
+- Actions 頁面 `Run workflow`（`dry_run=true` 預設）：建置並上傳 Actions Artifacts，**不發 Release**。
+- 人工推送 `v*` tag：建置後上傳 AppImage／deb 到 GitHub Release。
 
-macOS 建置會明確關閉簽名（`CSC_IDENTITY_AUTO_DISCOVERY=false`），所以不需要 Developer ID 也能完成打包。
+Godot binary 與 2 GB export templates 以 `actions/cache` 快取，重跑不必重新下載。
 
 ### 5. Godot body v0（v2 遷移中）
 Epic #7 的 body 實作在 `godot/`：透明視窗、rig、tray、roam 改由 Godot 4.7 執行，只透過
@@ -137,6 +138,8 @@ mabi/
 ├── daemon/               # brain 模組：config store、pet state、AI service、WS bridge
 ├── godot/                # Godot body v0：透明視窗、rig、tray helper、probe
 ├── ui/                   # 按需 chat／設定頁的瀏覽器 shim
+├── packaging/            # Linux launcher 與 .desktop（AppImage／deb）
+├── tools/dist/           # Linux 打包：Godot export＋Node SEA＋AppImage／deb
 ├── tools/bridge/         # 協議 schema、contract test、headless dev brain
 ├── tools/mcp/            # MCP server face 端到端 smoke test
 ├── assets/               # 托盤圖示 (macOS template PNG + Win/Linux 彩色 PNG)

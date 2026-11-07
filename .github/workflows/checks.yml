@@ -17,7 +17,7 @@ jobs:
       - name: JS syntax
         run: |
           set -e
-          for f in main.js preload.js renderer/*.js daemon/*.js tools/bridge/*.mjs tools/mcp/*.mjs; do
+          for f in main.js preload.js renderer/*.js daemon/*.js tools/bridge/*.mjs tools/mcp/*.mjs tools/dist/*.mjs; do
             if [ -f "$f" ]; then node --check "$f"; fi
           done
       - name: Shell syntax

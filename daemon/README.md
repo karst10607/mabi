@@ -12,6 +12,7 @@ the WS bridge (#10) and the Godot body (#11) land later.
 | `bridge-server.js` | Node only (`ws`) | Body↔daemon WS server, protocol v1 subset: hello/token, state.sync, mode, window, roam, interaction/react, ui.busy, ping. Owns brain state (mode, roam schedule) and validates the loopback token. |
 | `ui-server.js` | Node only | Serves the existing renderer DOM as an on-demand localhost page (bridge token required, cookie/query), reusing `renderer/` and injecting the config snapshot for the browser shim. |
 | `mcp-server.js` | Node only | MCP server face: standard Streamable HTTP JSON-RPC on `127.0.0.1` (default `47822/mcp`) with bearer token, Origin/Host allowlist and session tracking. Tools translate to brain state / WS (`pet.say`, `pet.mood.get`, `pet.ask`＋`pet.ask.result`, `notes.search`). |
+| `standalone.js` | Node only | Headless entry for the packaged app (issue #15): config store + bridge + UI + MCP, no Electron. Bundled by esbuild and injected into the Node binary as a SEA single file. |
 | `pet-state.js` | UMD (Node + browser) | Pure pet-state rules: affection/energy clamps, 10-point energy floor, posture order, pat/feed/play wake-up, idle → doze/sleep drift. No DOM, no storage, no timers. |
 | `ai-service.js` | UMD (Node + browser) | AI provider clients (builtin/openai/gemini/claude/ollama/custom). Config is read through an injected adapter (`get(key)` / `set(key, value)`), never through a global directly. |
 
