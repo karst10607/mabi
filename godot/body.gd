@@ -184,17 +184,22 @@ func _read_config_token() -> String:
 	return ""
 
 func _place_initial_window() -> void:
-	var pos = Vector2i.ZERO
-	var scale := maxi(1, DisplayServer.screen_get_scale(DisplayServer.window_get_current_screen()))
+	var pos := Vector2i.ZERO
 	if FileAccess.file_exists(config_path):
 		var data = JSON.parse_string(FileAccess.get_file_as_string(config_path))
 		if data is Dictionary and data.get("petPosition") is Dictionary:
 			var p = data.petPosition
-			if typeof(p.get("x")) == TYPE_FLOAT or typeof(p.get("x")) == TYPE_INT:
-				pos = Vector2i(int(p.x) * scale, int(p.y) * scale)
+			if (typeof(p.get("x")) == TYPE_FLOAT or typeof(p.get("x")) == TYPE_INT) and (typeof(p.get("y")) == TYPE_FLOAT or typeof(p.get("y")) == TYPE_INT):
+				var candidate := Vector2i(int(p.x), int(p.y))
+				for s in DisplayServer.get_screen_count():
+					var srect := DisplayServer.screen_get_usable_rect(s)
+					if srect.has_point(candidate):
+						pos = candidate
+						break
 	if pos == Vector2i.ZERO:
-		var wa := DisplayServer.screen_get_usable_rect(DisplayServer.window_get_current_screen())
-		pos = wa.position + wa.size - PET_SIZE - Vector2i(40, 30)
+		var current_screen := DisplayServer.window_get_current_screen()
+		var wa := DisplayServer.screen_get_usable_rect(current_screen)
+		pos = wa.position + wa.size - PET_SIZE - Vector2i(100, 100)
 	DisplayServer.window_set_size(PET_SIZE)
 	DisplayServer.window_set_position(pos)
 	pet_pos = pos
@@ -289,7 +294,10 @@ func _spawn_tray_helper() -> void:
 	var icon := ProjectSettings.globalize_path("res://icon.png")
 	if not FileAccess.file_exists(icon):
 		icon = exe_dir.path_join("icon.png")
-	tray_pid = OS.create_process("python3", PackedStringArray([
+	var py_bin := "python3"
+	if FileAccess.file_exists("/usr/bin/python3"):
+		py_bin = "/usr/bin/python3"
+	tray_pid = OS.create_process(py_bin, PackedStringArray([
 		script,
 		"--port=%d" % port,
 		"--ui-port=%d" % ui_port,
