@@ -1,6 +1,6 @@
 {
   "name": "aurapet-desktop",
-  "version": "1.14.2",
+  "version": "1.14.3",
   "description": "Cross-platform AI Desktop Pet & Companion (Godot 4.x Body + Node SEA Daemon + MCP)",
   "main": "daemon/standalone.js",
   "scripts": {

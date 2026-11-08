@@ -74,6 +74,7 @@ var roam_forced := false
 var always_on_top := true
 var click_through := false
 var is_visible := true
+var sound_enabled := true
 var pet_pos := Vector2i.ZERO
 var paused := false
 
@@ -95,6 +96,7 @@ var tray_id := -1
 var tray_pid := -1
 var idx_always := -1
 var idx_roam := -1
+var idx_sound := -1
 var idx_visible := -1
 
 func _ready() -> void:
@@ -203,6 +205,8 @@ func _load_app_settings() -> void:
 	if data is Dictionary:
 		if data.has("skin") and typeof(data.skin) == TYPE_STRING and data.skin != "":
 			skin = data.skin
+		if data.has("soundEnabled") and typeof(data.soundEnabled) == TYPE_BOOL:
+			sound_enabled = data.soundEnabled
 		if data.has("petScale") and (typeof(data.petScale) == TYPE_FLOAT or typeof(data.petScale) == TYPE_INT):
 			pet_scale = clampf(float(data.petScale), 0.8, 3.0)
 		else:
@@ -250,6 +254,30 @@ func _save_skin(s: String) -> void:
 		if f != null:
 			f.store_string(JSON.stringify(data, "  "))
 			f.close()
+
+func _apply_sound_enabled(on: bool, save: bool = true) -> void:
+	sound_enabled = on
+	_sync_tray_checks()
+	if save:
+		_save_sound_enabled(sound_enabled)
+	print("body: soundEnabled=%s" % sound_enabled)
+
+func _save_sound_enabled(on: bool) -> void:
+	if config_path == "" or not FileAccess.file_exists(config_path):
+		return
+	var text := FileAccess.get_file_as_string(config_path)
+	var data = JSON.parse_string(text)
+	if data is Dictionary:
+		data["soundEnabled"] = on
+		var f := FileAccess.open(config_path, FileAccess.WRITE)
+		if f != null:
+			f.store_string(JSON.stringify(data, "  "))
+			f.close()
+
+func _tray_toggle_sound() -> void:
+	_apply_sound_enabled(not sound_enabled, true)
+	send_event("settings.set", {"patch": {"soundEnabled": sound_enabled}})
+	print("tray: soundEnabled=%s" % sound_enabled)
 
 func _tray_set_skin(new_skin: String) -> void:
 	skin = new_skin
@@ -386,7 +414,9 @@ func _setup_tray() -> void:
 	idx_visible = tray_menu.add_item(tray_rid, "顯示 / 隱藏", Callable(self, "_tray_toggle_visible"))
 	idx_always = tray_menu.add_check_item(tray_rid, "置頂顯示", Callable(self, "_tray_toggle_top"))
 	idx_roam = tray_menu.add_check_item(tray_rid, "到處走 (螢幕邊緣)", Callable(self, "_tray_toggle_roam"))
+	idx_sound = tray_menu.add_check_item(tray_rid, "🔊 啟用音效", Callable(self, "_tray_toggle_sound"))
 	tray_menu.set_item_checked(tray_rid, idx_always, true)
+	tray_menu.set_item_checked(tray_rid, idx_sound, sound_enabled)
 	tray_menu.add_separator(tray_rid)
 	tray_menu.add_item(tray_rid, "🐱 寵物：貓咪 (Cat)", Callable(self, "_tray_set_skin").bind("cat2d"))
 	tray_menu.add_item(tray_rid, "🐶 寵物：阿米 (Ami)", Callable(self, "_tray_set_skin").bind("ami2d"))
@@ -469,6 +499,7 @@ func _tray_pat() -> void:
 	send_event("interaction", {"kind": "pat", "source": "tray"})
 	send_event("activity")
 	rig.play_react("happy")
+	_play_sound("pat")
 	_show_bubble("好舒服～", 1600)
 	print("tray: pat")
 
@@ -476,6 +507,7 @@ func _tray_feed() -> void:
 	send_event("interaction", {"kind": "feed", "source": "tray"})
 	send_event("activity")
 	rig.play_react("eating")
+	_play_sound("feed")
 	_show_bubble("好好吃！", 1600)
 	print("tray: feed")
 
@@ -493,6 +525,8 @@ func _sync_tray_checks() -> void:
 		tray_menu.set_item_checked(tray_rid, idx_always, always_on_top)
 	if idx_roam >= 0:
 		tray_menu.set_item_checked(tray_rid, idx_roam, roam_enabled)
+	if idx_sound >= 0:
+		tray_menu.set_item_checked(tray_rid, idx_sound, sound_enabled)
 	if idx_visible >= 0:
 		tray_menu.set_item_label(tray_rid, idx_visible, "隱藏" if is_visible else "顯示")
 
@@ -621,6 +655,8 @@ func _handle_event(t: String, msg: Dictionary) -> void:
 				_set_visible(bool(msg.visible))
 			if msg.has("petScale"):
 				_apply_scale(float(msg.petScale), false)
+			if msg.has("soundEnabled"):
+				_apply_sound_enabled(bool(msg.soundEnabled), false)
 			_sync_tray_checks()
 			_report_window_state()
 		"window.minimize":
@@ -650,10 +686,13 @@ func _handle_event(t: String, msg: Dictionary) -> void:
 			rig.play_react(emotion)
 			print("react: %s" % emotion)
 			if emotion == "eating":
+				_play_sound("feed")
 				_show_bubble("好好吃！", 1400)
 			elif emotion == "happy":
+				_play_sound("pat")
 				_show_bubble("好開心～", 1400)
 			elif emotion == "sysinfo":
+				_play_sound("pop")
 				_show_htop_bubble()
 		"sysinfo.data":
 			_apply_sysinfo(msg)
@@ -694,6 +733,8 @@ func _apply_state_sync(msg: Dictionary) -> void:
 		var ps = float(msg.petScale)
 		if ps > 0.0:
 			_apply_scale(ps, false)
+	if msg.has("soundEnabled"):
+		_apply_sound_enabled(bool(msg.soundEnabled), false)
 	posture = str(msg.get("posture", posture))
 	rig.set_posture(posture)
 	if msg.has("visibility"):
@@ -757,11 +798,14 @@ func _report_window_state() -> void:
 	})
 
 func _play_sound(clip: String) -> void:
-	if clip == "":
+	if not sound_enabled or clip == "":
 		return
-	var path := "res://assets/%s" % clip
+	var filename := clip
+	if not filename.ends_with(".wav") and not filename.ends_with(".ogg"):
+		filename += ".wav"
+	var path := "res://assets/%s" % filename
 	if not ResourceLoader.exists(path):
-		print("sound.play: clip not bundled: %s" % clip)
+		print("sound.play: clip not bundled: %s" % path)
 		return
 	var player := AudioStreamPlayer.new()
 	player.stream = load(path)
@@ -939,6 +983,7 @@ func _input(event: InputEvent) -> void:
 			else:
 				send_event("interaction", {"kind": "click", "source": "window"})
 				rig.play_react("happy")
+				_play_sound("pat")
 				_show_htop_bubble()
 				print("interaction: click")
 		return
