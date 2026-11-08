@@ -429,6 +429,110 @@
           "description": "Implemented MCP tool names (daemon/mcp-server.js)"
         }
       }
+    },
+    "sysinfo.get": {
+      "dir": ["ui>brain"],
+      "forms": ["request"],
+      "reply": {
+        "required": ["cpu", "memory", "swap", "processes", "uptime"],
+        "fields": {
+          "cpu": {
+            "type": "object",
+            "required": ["overall", "cores"],
+            "fields": {
+              "overall": { "type": "number", "minimum": 0 },
+              "cores": { "type": "array", "items": { "type": "number", "minimum": 0 } }
+            }
+          },
+          "memory": {
+            "type": "object",
+            "required": ["total", "used", "percent"],
+            "fields": {
+              "total": { "type": "number", "minimum": 0 },
+              "used": { "type": "number", "minimum": 0 },
+              "percent": { "type": "number", "minimum": 0 }
+            }
+          },
+          "swap": {
+            "type": "object",
+            "required": ["total", "used", "percent"],
+            "fields": {
+              "total": { "type": "number", "minimum": 0 },
+              "used": { "type": "number", "minimum": 0 },
+              "percent": { "type": "number", "minimum": 0 }
+            }
+          },
+          "processes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["pid", "name"],
+              "fields": {
+                "pid": { "type": "integer", "minimum": 0 },
+                "name": { "type": "string" },
+                "cpu": { "type": "number" },
+                "mem": { "type": "number" }
+              }
+            }
+          },
+          "uptime": { "type": "number", "minimum": 0 }
+        }
+      }
+    },
+    "sysinfo.subscribe": {
+      "dir": ["ui>brain"],
+      "forms": ["event"]
+    },
+    "sysinfo.unsubscribe": {
+      "dir": ["ui>brain"],
+      "forms": ["event"]
+    },
+    "sysinfo.data": {
+      "dir": ["brain>ui"],
+      "forms": ["event"],
+      "required": ["cpu", "memory", "swap", "processes", "uptime"],
+      "fields": {
+        "cpu": {
+          "type": "object",
+          "required": ["overall", "cores"],
+          "fields": {
+            "overall": { "type": "number", "minimum": 0 },
+            "cores": { "type": "array", "items": { "type": "number", "minimum": 0 } }
+          }
+        },
+        "memory": {
+          "type": "object",
+          "required": ["total", "used", "percent"],
+          "fields": {
+            "total": { "type": "number", "minimum": 0 },
+            "used": { "type": "number", "minimum": 0 },
+            "percent": { "type": "number", "minimum": 0 }
+          }
+        },
+        "swap": {
+          "type": "object",
+          "required": ["total", "used", "percent"],
+          "fields": {
+            "total": { "type": "number", "minimum": 0 },
+            "used": { "type": "number", "minimum": 0 },
+            "percent": { "type": "number", "minimum": 0 }
+          }
+        },
+        "processes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["pid", "name"],
+            "fields": {
+              "pid": { "type": "integer", "minimum": 0 },
+              "name": { "type": "string" },
+              "cpu": { "type": "number" },
+              "mem": { "type": "number" }
+            }
+          }
+        },
+        "uptime": { "type": "number", "minimum": 0 }
+      }
     }
   },
   "legacyChannels": {

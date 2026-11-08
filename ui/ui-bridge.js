@@ -217,6 +217,9 @@
           stream.onError(String(message.error || 'unknown error'));
         }
         return;
+      case 'sysinfo.data':
+        window.dispatchEvent(new CustomEvent('aurapet:sysinfo', { detail: message }));
+        return;
       case 'ping':
         if (message.id != null) rawSend({ id: message.id, ok: true, ts: message.ts });
         else fire('pong', { ts: Date.now() });
@@ -354,7 +357,10 @@
     setUiBusy: (busy) => fire('ui.busy', { busy: Boolean(busy) }),
     notifyPetActivity: () => fire('activity'),
     getRoamEnabled: () => (connected ? request('roam.get').then((reply) => Boolean(reply.enabled)) : Promise.resolve(roamEnabled)),
-    setRoamEnabled: (enabled) => fire('roam.set-enabled', { enabled: Boolean(enabled) })
+    setRoamEnabled: (enabled) => fire('roam.set-enabled', { enabled: Boolean(enabled) }),
+    getSystemInfo: () => (connected ? request('sysinfo.get') : Promise.resolve(null)),
+    subscribeSystemInfo: () => fire('sysinfo.subscribe'),
+    unsubscribeSystemInfo: () => fire('sysinfo.unsubscribe')
   };
 
   window.AIService = AIService;

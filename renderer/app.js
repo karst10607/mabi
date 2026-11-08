@@ -470,6 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function closeSettings() {
     if (settingsModal.classList.contains('hidden')) return;
     settingsModal.classList.add('hidden');
+    stopMonitorUpdates();
     if (window.electronAPI && window.electronAPI.setUiBusy) {
       window.electronAPI.setUiBusy(false);
     }
@@ -478,6 +479,116 @@ document.addEventListener('DOMContentLoaded', () => {
   btnQuickSettings.addEventListener('click', openSettings);
   btnChatSettings.addEventListener('click', openSettings);
   btnCloseSettings.addEventListener('click', closeSettings);
+
+  // --- System Monitor (htop style) Lifecycle ---
+  let monitorSubscribed = false;
+
+  function renderMonitorData(data) {
+    if (!data) return;
+    const badge = document.getElementById('monitor-platform-badge');
+    const uptime = document.getElementById('monitor-uptime-text');
+    const load = document.getElementById('monitor-load-text');
+    const cpuOverall = document.getElementById('monitor-cpu-overall');
+    const coresGrid = document.getElementById('monitor-cores-container');
+    const memText = document.getElementById('monitor-mem-text');
+    const memPercent = document.getElementById('monitor-mem-percent');
+    const memFill = document.getElementById('monitor-mem-fill');
+    const swapText = document.getElementById('monitor-swap-text');
+    const swapPercent = document.getElementById('monitor-swap-percent');
+    const swapFill = document.getElementById('monitor-swap-fill');
+    const procBody = document.getElementById('monitor-processes-body');
+
+    if (badge && data.platform) badge.textContent = data.platform.toUpperCase();
+    if (uptime && typeof data.uptime === 'number') {
+      const h = Math.floor(data.uptime / 3600);
+      const m = Math.floor((data.uptime % 3600) / 60);
+      uptime.textContent = `Uptime: ${h}h ${m}m`;
+    }
+    if (load && Array.isArray(data.loadAvg)) {
+      load.textContent = `Load: ${data.loadAvg.join(' ')}`;
+    }
+    if (cpuOverall && data.cpu) {
+      cpuOverall.textContent = `${data.cpu.overall}%`;
+      cpuOverall.style.color = data.cpu.overall > 80 ? '#ef4444' : data.cpu.overall > 50 ? '#f59e0b' : '#10b981';
+    }
+
+    if (coresGrid && data.cpu && Array.isArray(data.cpu.cores)) {
+      coresGrid.innerHTML = data.cpu.cores.map((val, idx) => {
+        const barColor = val > 80 ? '#ef4444' : val > 50 ? '#f59e0b' : '#10b981';
+        return `
+          <div class="htop-core-bar">
+            <span class="core-num">${idx}</span>
+            <div class="htop-bar-track">
+              <div class="htop-bar-fill" style="width: ${val}%; background-color: ${barColor}"></div>
+            </div>
+            <span class="core-pct">${val}%</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    if (data.memory) {
+      const usedMb = Math.round(data.memory.used / (1024 * 1024));
+      const totalMb = Math.round(data.memory.total / (1024 * 1024));
+      if (memText) memText.textContent = `${usedMb} / ${totalMb} MB`;
+      if (memPercent) memPercent.textContent = `${data.memory.percent}%`;
+      if (memFill) {
+        memFill.style.width = `${data.memory.percent}%`;
+        memFill.style.backgroundColor = data.memory.percent > 85 ? '#ef4444' : '#6366f1';
+      }
+    }
+
+    if (data.swap) {
+      const usedMb = Math.round(data.swap.used / (1024 * 1024));
+      const totalMb = Math.round(data.swap.total / (1024 * 1024));
+      if (swapText) swapText.textContent = `${usedMb} / ${totalMb} MB`;
+      if (swapPercent) swapPercent.textContent = `${data.swap.percent}%`;
+      if (swapFill) {
+        swapFill.style.width = `${data.swap.percent}%`;
+        swapFill.style.backgroundColor = data.swap.percent > 80 ? '#ef4444' : '#ec4899';
+      }
+    }
+
+    if (procBody && Array.isArray(data.processes)) {
+      if (data.processes.length === 0) {
+        procBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#888;">無進程數據</td></tr>';
+      } else {
+        procBody.innerHTML = data.processes.map((p) => `
+          <tr>
+            <td class="proc-pid">${p.pid}</td>
+            <td class="proc-name" title="${p.name}">${p.name}</td>
+            <td class="proc-cpu">${p.cpu}%</td>
+            <td class="proc-mem">${p.mem}%</td>
+          </tr>
+        `).join('');
+      }
+    }
+  }
+
+  function onSysinfoEvent(e) {
+    if (e.detail) renderMonitorData(e.detail);
+  }
+
+  function startMonitorUpdates() {
+    if (monitorSubscribed) return;
+    monitorSubscribed = true;
+    window.addEventListener('aurapet:sysinfo', onSysinfoEvent);
+    if (window.electronAPI) {
+      if (window.electronAPI.subscribeSystemInfo) window.electronAPI.subscribeSystemInfo();
+      if (window.electronAPI.getSystemInfo) {
+        window.electronAPI.getSystemInfo().then(renderMonitorData).catch(() => {});
+      }
+    }
+  }
+
+  function stopMonitorUpdates() {
+    if (!monitorSubscribed) return;
+    monitorSubscribed = false;
+    window.removeEventListener('aurapet:sysinfo', onSysinfoEvent);
+    if (window.electronAPI && window.electronAPI.unsubscribeSystemInfo) {
+      window.electronAPI.unsubscribeSystemInfo();
+    }
+  }
 
   // Tab switching inside Settings
   const tabBtns = document.querySelectorAll('.tab-btn');
@@ -495,6 +606,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (targetId === 'tab-pet') {
         const checked = document.querySelector('input[name="petSkin"]:checked');
         checked?.closest('.skin-card')?.scrollIntoView({ block: 'nearest' });
+      }
+      if (targetId === 'tab-monitor') {
+        startMonitorUpdates();
+      } else {
+        stopMonitorUpdates();
       }
     });
   });

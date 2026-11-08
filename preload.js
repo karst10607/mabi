@@ -190,6 +190,9 @@ function handleEvent(message) {
     case 'react':
       dispatch('petInteraction', message.kind);
       return;
+    case 'sysinfo.data':
+      window.dispatchEvent(new CustomEvent('aurapet:sysinfo', { detail: message }));
+      return;
     case 'ping':
       if (message.id != null) {
         rawSend({ id: message.id, ok: true, ts: message.ts });
@@ -326,7 +329,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setRoamEnabled: (enabled) => {
     roamEnabled = Boolean(enabled);
     fire('roam.set-enabled', { enabled: roamEnabled });
-  }
+  },
+  getSystemInfo: () => (connected ? request('sysinfo.get') : Promise.resolve(null)),
+  subscribeSystemInfo: () => fire('sysinfo.subscribe'),
+  unsubscribeSystemInfo: () => fire('sysinfo.unsubscribe')
 });
 
 connect();

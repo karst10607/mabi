@@ -415,6 +415,16 @@ async function main() {
   const moodState = mood.json?.result?.structuredContent;
   check('pet.mood.get returns brain state', moodState?.mode === 'pet' && moodState?.bodyConnected === true, `mode=${moodState?.mode}`);
 
+  // --- system.htop_summary --------------------------------------------
+  const htop = await rpc({
+    jsonrpc: '2.0',
+    id: 41,
+    method: 'tools/call',
+    params: { name: 'system.htop_summary', arguments: { topCount: 5 } }
+  }, { session });
+  const htopData = htop.json?.result?.structuredContent;
+  check('system.htop_summary returns system stats', typeof htopData?.cpu?.overall === 'number' && typeof htopData?.memory?.percent === 'number' && Array.isArray(htopData?.processes), `cpu=${htopData?.cpu?.overall}% mem=${htopData?.memory?.percent}%`);
+
   // --- pet.ask ticket -------------------------------------------------
   const asked = await rpc({
     jsonrpc: '2.0',

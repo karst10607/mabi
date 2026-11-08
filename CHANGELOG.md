@@ -2,6 +2,16 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.14.0] - 2026-11-08
+
+### Added
+
+- **系統監控與 htop 資訊顯示（#34）**：
+  - 新增 `daemon/sysinfo.js` 模組，優先讀取 Linux `/proc/stat`（精準計算總體與 per-core CPU 佔用率）、`/proc/meminfo`（Mem/Swap 計算）與 `ps` 排序獲取 Top Processes。在非 Linux 或無 procfs 環境自動降級使用 Node.js 內建 `os` 模組。
+  - 擴充 WS 私有協議（`sysinfo.get`, `sysinfo.subscribe`, `sysinfo.unsubscribe`, `sysinfo.data`），並同步更新 `tools/bridge/protocol.schema.json` 與 `contract-test.mjs`。
+  - 在 `daemon/mcp-server.js` 註冊 MCP 工具 `system.htop_summary`，支援外部 AI 助理或桌寵查詢當前系統硬體負載。
+  - 在 Web UI 與設定面板新增「📊 系統監控」分頁，具備 htop 風格之多核心 CPU 柱狀圖、記憶體與 Swap 進度條及主要進程佔用列表，並採用按需（On-demand）開關輪詢節省背景資源。
+
 ## [1.13.0] - 2026-11-08
 
 ### Added

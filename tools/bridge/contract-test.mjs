@@ -208,6 +208,34 @@ const fixtures = {
   'mcp.server.status': [
     { form: 'event', msg: evt('mcp.server.status', { enabled: true, port: 47822, clients: 1, tools: TOOL_NAMES }) },
   ],
+  'sysinfo.get': [
+    { form: 'request', msg: req(8, 'sysinfo.get') },
+    {
+      form: 'reply',
+      replyFor: 'sysinfo.get',
+      msg: rep(8, {
+        cpu: { overall: 20.5, cores: [15.0, 25.0] },
+        memory: { total: 16000000, used: 8000000, percent: 50.0 },
+        swap: { total: 2000000, used: 100000, percent: 5.0 },
+        processes: [{ pid: 1234, name: 'node', cpu: 2.5, mem: 1.2 }],
+        uptime: 3600
+      })
+    }
+  ],
+  'sysinfo.subscribe': [{ form: 'event', msg: evt('sysinfo.subscribe') }],
+  'sysinfo.unsubscribe': [{ form: 'event', msg: evt('sysinfo.unsubscribe') }],
+  'sysinfo.data': [
+    {
+      form: 'event',
+      msg: evt('sysinfo.data', {
+        cpu: { overall: 20.5, cores: [15.0, 25.0] },
+        memory: { total: 16000000, used: 8000000, percent: 50.0 },
+        swap: { total: 2000000, used: 100000, percent: 5.0 },
+        processes: [{ pid: 1234, name: 'node', cpu: 2.5, mem: 1.2 }],
+        uptime: 3600
+      })
+    }
+  ],
 };
 
 const invalidCases = [
@@ -388,7 +416,7 @@ check('preload keeps the renderer electronAPI surface', () => {
 });
 
 check('mcp server face declares the implemented tools (issue #14)', () => {
-  const expected = ['pet.say', 'pet.mood.get', 'pet.ask', 'pet.ask.result', 'notes.search'];
+  const expected = ['pet.say', 'pet.mood.get', 'pet.ask', 'pet.ask.result', 'notes.search', 'system.htop_summary'];
   assert(JSON.stringify(TOOL_NAMES) === JSON.stringify(expected), `daemon/mcp-server.js exposes ${TOOL_NAMES.join(', ')}`);
   const fixture = fixtures['mcp.server.status'][0].msg;
   assert(JSON.stringify(fixture.tools) === JSON.stringify(expected), 'mcp.server.status fixture tools differ from daemon');
