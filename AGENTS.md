@@ -114,3 +114,17 @@ flowchart TD
 - 訊息風格遵照 Conventional Commits：`feat(...)`、`fix(...)`、`chore(...)`、`docs(...)`。
 - 禁止行為：**嚴禁 force push**、**嚴禁提交 secrets/tokens**、**嚴禁擅改系統級設定**。
 - `gh` CLI 路徑：`/home/koto/公共/House_Loan/gh_2.67.0_linux_amd64/bin/gh`。
+
+---
+
+## 8. 跨專案生態與外部邊界（Ecosystem & Reien Integration）
+
+本專案與線上靈園專案（`karst10607/reien-godot` 與 `karst10607/reien`）為關係生態，相關架構決策與邊界規範詳見 **[ADR 0001: 跨專案整合與 2.5D 重構策略](docs/adr/0001-reien-integration-and-2.5d-strategy.md)**。
+
+任何協作 Agent 在進行跨專案開發時，**必須嚴格遵守以下準則**：
+1. **禁止代碼庫硬合併（No Monorepo）**：AuraPet 桌面端必須維持常駐輕量與低功耗（low-proc idle ~10% CPU / 100MB RAM），嚴禁將靈園大型模型或場景代碼直接合併進 `mabi` 主幹。
+2. **三階段整合協定**：
+   - **Phase 1**：透過 WebSocket / REST API / MCP 工具進行狀態聯動（如獻花提醒、一鍵直達）。
+   - **Phase 2**：遵循 `pet-profile.json` 共享格式實現寵物外觀與紀念日同步。
+   - **Phase 3**：未來僅允許透過 Godot 獨立擴充包（`.pck`）形式動態載入靈園 2.5D 箱庭空間。
+
