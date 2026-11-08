@@ -160,6 +160,15 @@ class TrayApp:
         self.visible = True
         self.roam = False
         self.always = True
+        self.sound_enabled = True
+        if args.config and os.path.exists(args.config):
+            try:
+                with open(args.config, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                    if isinstance(cfg, dict) and "soundEnabled" in cfg:
+                        self.sound_enabled = bool(cfg["soundEnabled"])
+            except Exception:
+                pass
 
         self.indicator = AppIndicator.Indicator.new(
             "aurapet-body", args.icon or "applications-games",
@@ -178,6 +187,7 @@ class TrayApp:
         self.visible_item = self._check("顯示 / 隱藏", not self.visible, self.toggle_visible)
         self.always_item = self._check("置頂顯示", self.always, self.toggle_always)
         self.roam_item = self._check("到處走 (螢幕邊緣)", self.roam, self.toggle_roam)
+        self.sound_item = self._check("🔊 啟用音效", self.sound_enabled, self.toggle_sound)
         menu.append(Gtk.SeparatorMenuItem())
 
         # 換寵物
@@ -236,6 +246,8 @@ class TrayApp:
         self.visible_item.set_active(not self.visible)
         self.always_item.set_active(self.always)
         self.roam_item.set_active(self.roam)
+        if hasattr(self, "sound_item"):
+            self.sound_item.set_active(self.sound_enabled)
         self.updating = False
 
     def toggle_visible(self, item):
@@ -252,6 +264,12 @@ class TrayApp:
         if self.updating:
             return
         self.bridge.send({"t": "roam.set-enabled", "enabled": item.get_active()})
+
+    def toggle_sound(self, item):
+        if self.updating:
+            return
+        self.sound_enabled = item.get_active()
+        self.bridge.send({"t": "settings.set", "patch": {"soundEnabled": self.sound_enabled}})
 
     def open_ui(self):
         webbrowser.open(f"http://127.0.0.1:{self.args.ui_port}/?token={quote(self.args.token)}")
@@ -271,6 +289,8 @@ class TrayApp:
                 self.visible = bool(message["visibility"])
             if "alwaysOnTop" in message:
                 self.always = bool(message["alwaysOnTop"])
+            if "soundEnabled" in message:
+                self.sound_enabled = bool(message["soundEnabled"])
             self._set_checks()
         elif t == "window.state":
             if "visible" in message:
@@ -278,6 +298,15 @@ class TrayApp:
             if "alwaysOnTop" in message:
                 self.always = bool(message["alwaysOnTop"])
             self._set_checks()
+        elif t == "window.apply":
+            if "soundEnabled" in message:
+                self.sound_enabled = bool(message["soundEnabled"])
+            self._set_checks()
+        elif t == "settings.changed":
+            patch = message.get("patch", {})
+            if "soundEnabled" in patch:
+                self.sound_enabled = bool(patch["soundEnabled"])
+                self._set_checks()
         elif t == "roam.enabled":
             self.roam = bool(message.get("enabled"))
             self._set_checks()

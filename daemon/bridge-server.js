@@ -49,6 +49,7 @@ function createBridgeServer(options = {}) {
     posture: configStore.get('posture') || 'sit',
     skin: configStore.get('skin') || 'cat2d',
     petScale: configStore.get('petScale') || 1.25,
+    soundEnabled: configStore.get('soundEnabled') !== false,
     nickname: configStore.get('nickname') || '',
     roamEnabled: configStore.get('roamEnabled') === true,
     uiBusy: false,
@@ -240,6 +241,10 @@ function createBridgeServer(options = {}) {
       state.petScale = flat.petScale;
       if (body) emit(body, 'window.apply', { petScale: state.petScale });
     }
+    if (typeof flat.soundEnabled === 'boolean') {
+      state.soundEnabled = flat.soundEnabled;
+      if (body) emit(body, 'window.apply', { soundEnabled: state.soundEnabled });
+    }
     ai.loadConfig();
     if (id != null) reply(ws, id, { patch: redactPatch({ ...flat, ...Object.fromEntries(removals.map((k) => [k, null])) }) });
     toUi('settings.changed', { patch: redactPatch(patch) });
@@ -322,7 +327,8 @@ function createBridgeServer(options = {}) {
         visibility: state.visible,
         clickThrough: state.clickThrough,
         alwaysOnTop: state.alwaysOnTop,
-        petScale: state.petScale || 1.25
+        petScale: state.petScale || 1.25,
+        soundEnabled: state.soundEnabled
       });
       if (state.roamEnabled) scheduleRoam(2000);
       return;

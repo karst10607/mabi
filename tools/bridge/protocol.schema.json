@@ -71,7 +71,9 @@
         "roamEnabled": { "type": "boolean" },
         "visibility": { "type": "boolean" },
         "clickThrough": { "type": "boolean" },
-        "alwaysOnTop": { "type": "boolean" }
+        "alwaysOnTop": { "type": "boolean" },
+        "petScale": { "type": "number" },
+        "soundEnabled": { "type": "boolean" }
       }
     },
     "ping": {
@@ -143,7 +145,9 @@
         "alwaysOnTop": { "type": "boolean" },
         "clickThrough": { "type": "boolean" },
         "forward": { "type": "boolean" },
-        "visible": { "type": "boolean" }
+        "visible": { "type": "boolean" },
+        "petScale": { "type": "number" },
+        "soundEnabled": { "type": "boolean" }
       }
     },
     "window.state": {

@@ -2,6 +2,20 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.14.3] - 2026-11-08
+
+### Added
+
+- **恢復點擊互動音效與零依賴音效資產（#40）**：
+  - 產生並打包輕量 16-bit PCM WAV 音效（`pat.wav` 清脆撫摸鈴音、`feed.wav` 趣味餵食音調、`pop.wav` 氣泡彈跳聲、`talk.wav` 提示音），無任何外部依賴。
+  - 在點擊桌寵（`_input`）、系統匣撫摸與餵食、以及接收 `react`（happy/eating/sysinfo）時恢復播放相應音效。
+  - `_play_sound` 支援自動補全 `.wav` 副檔名載入，優雅支援靜音回退。
+
+- **音效開關選項與持久化支援（#40）**：
+  - 系統匣選單（Ayatana / NativeMenu）新增「🔊 啟用音效」勾選開關，支援即時切換。
+  - 支援將 `soundEnabled` 寫入 `app-settings.json` 持久化保存，預設啟用，並於開機或重啟時自動讀取恢復。
+  - WebSocket 私有協議與 Daemon 狀態完整同步 `soundEnabled`（支援 `settings.set`、`window.apply` 與 `state.sync`）。
+
 ## [1.14.2] - 2026-11-08
 
 ### Added
