@@ -13,7 +13,10 @@ extends Node2D
 const PROTOCOL_VERSION := 1
 const DEFAULT_PORT := 47821
 const DEFAULT_UI_PORT := 47830
-const PET_SIZE := Vector2i(360, 290)
+const BASE_PET_SIZE := Vector2i(360, 290)
+var PET_SIZE := Vector2i(360, 290)
+var pet_scale := 1.25
+var pet_size := Vector2i(360, 290)
 const CHAT_SIZE := Vector2i(460, 680)
 const ROAM := {"minDistance": 110, "speed": 78.0, "tick": 0.033}
 const PING_INTERVAL := 15.0
@@ -99,17 +102,20 @@ func _ready() -> void:
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_TRANSPARENT, true)
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
 	_parse_args()
+	_load_app_settings()
 	if shot_path != "":
 		use_tray = false
 	rig = PetRig2D.new()
 	rig.name = "Rig"
 	add_child(rig)
+	rig.set_skin(skin)
 	if not rig.load_pose("cat"):
-		push_error("body: could not load sit skin")
+		push_error("body: could not load initial pose for skin %s" % skin)
 		get_tree().quit(1)
 		return
 	_build_bubble()
 	_build_hud()
+	_apply_scale(pet_scale, false)
 	if use_tray:
 		_setup_tray()
 	_place_initial_window()
@@ -189,6 +195,74 @@ func _read_config_token() -> String:
 	push_error("body: config has no bridgeToken: %s" % config_path)
 	return ""
 
+func _load_app_settings() -> void:
+	if not FileAccess.file_exists(config_path):
+		return
+	var text := FileAccess.get_file_as_string(config_path)
+	var data = JSON.parse_string(text)
+	if data is Dictionary:
+		if data.has("skin") and typeof(data.skin) == TYPE_STRING and data.skin != "":
+			skin = data.skin
+		if data.has("petScale") and (typeof(data.petScale) == TYPE_FLOAT or typeof(data.petScale) == TYPE_INT):
+			pet_scale = clampf(float(data.petScale), 0.8, 3.0)
+		else:
+			var wa := DisplayServer.screen_get_usable_rect(DisplayServer.window_get_current_screen())
+			if wa.size.y >= 1440:
+				pet_scale = 1.5
+
+func _apply_scale(new_scale: float, save: bool = true) -> void:
+	pet_scale = clampf(new_scale, 0.8, 3.0)
+	pet_size = Vector2i(int(BASE_PET_SIZE.x * pet_scale), int(BASE_PET_SIZE.y * pet_scale))
+	PET_SIZE = pet_size
+	DisplayServer.window_set_size(pet_size)
+	if rig != null:
+		rig.set_rig_scale(pet_scale)
+	if hud_label != null:
+		hud_label.add_theme_font_size_override("normal_font_size", int(round(11 * pet_scale)))
+	if bubble_label != null:
+		bubble_label.add_theme_font_size_override("normal_font_size", int(round(13 * pet_scale)))
+	_place_hud()
+	_place_bubble()
+	if save:
+		_save_pet_scale(pet_scale)
+	print("body: applied scale=%.2f window_size=%s" % [pet_scale, pet_size])
+
+func _save_pet_scale(s: float) -> void:
+	if config_path == "" or not FileAccess.file_exists(config_path):
+		return
+	var text := FileAccess.get_file_as_string(config_path)
+	var data = JSON.parse_string(text)
+	if data is Dictionary:
+		data["petScale"] = s
+		var f := FileAccess.open(config_path, FileAccess.WRITE)
+		if f != null:
+			f.store_string(JSON.stringify(data, "  "))
+			f.close()
+
+func _save_skin(s: String) -> void:
+	if config_path == "" or not FileAccess.file_exists(config_path):
+		return
+	var text := FileAccess.get_file_as_string(config_path)
+	var data = JSON.parse_string(text)
+	if data is Dictionary:
+		data["skin"] = s
+		var f := FileAccess.open(config_path, FileAccess.WRITE)
+		if f != null:
+			f.store_string(JSON.stringify(data, "  "))
+			f.close()
+
+func _tray_set_skin(new_skin: String) -> void:
+	skin = new_skin
+	rig.set_skin(skin)
+	_save_skin(skin)
+	send_event("settings.set", {"patch": {"skin": skin}})
+	print("tray: set skin to %s" % skin)
+
+func _tray_set_scale(new_scale: float) -> void:
+	_apply_scale(new_scale, true)
+	send_event("settings.set", {"patch": {"petScale": new_scale}})
+	print("tray: set scale to %.2f" % new_scale)
+
 func _place_initial_window() -> void:
 	var pos := Vector2i.ZERO
 	if FileAccess.file_exists(config_path):
@@ -205,11 +279,11 @@ func _place_initial_window() -> void:
 	if pos == Vector2i.ZERO:
 		var current_screen := DisplayServer.window_get_current_screen()
 		var wa := DisplayServer.screen_get_usable_rect(current_screen)
-		pos = wa.position + wa.size - PET_SIZE - Vector2i(100, 100)
-	DisplayServer.window_set_size(PET_SIZE)
+		pos = wa.position + wa.size - pet_size - Vector2i(100, 100)
+	DisplayServer.window_set_size(pet_size)
 	DisplayServer.window_set_position(pos)
 	pet_pos = pos
-	print("body: initial pos=%s size=%s screen=%s rect=%s" % [pos, PET_SIZE,
+	print("body: initial pos=%s size=%s screen=%s rect=%s" % [pos, pet_size,
 		DisplayServer.window_get_current_screen(),
 		DisplayServer.screen_get_usable_rect(DisplayServer.window_get_current_screen())])
 
@@ -294,11 +368,7 @@ func _place_hud() -> void:
 	if hud_panel == null or not hud_panel.visible:
 		return
 	hud_panel.reset_size()
-	if mode == "pet":
-		hud_panel.position = Vector2(236, 105)
-	else:
-		var size := DisplayServer.window_get_size()
-		hud_panel.position = Vector2(roundf((size.x - hud_panel.size.x) * 0.5), size.y - hud_panel.size.y - 10)
+	hud_panel.position = Vector2(roundf(236 * pet_scale), roundf(90 * pet_scale))
 
 func _setup_tray() -> void:
 	if not DisplayServer.has_feature(DisplayServer.FEATURE_STATUS_INDICATOR):
@@ -313,18 +383,26 @@ func _setup_tray() -> void:
 	var i_title: int = tray_menu.add_item(tray_rid, "AuraPet 桌面寵物", Callable())
 	tray_menu.set_item_disabled(tray_rid, i_title, true)
 	tray_menu.add_separator(tray_rid)
-	tray_menu.add_item(tray_rid, "切換寵物/對話形態", Callable(self, "_tray_toggle_mode"))
 	idx_visible = tray_menu.add_item(tray_rid, "顯示 / 隱藏", Callable(self, "_tray_toggle_visible"))
 	idx_always = tray_menu.add_check_item(tray_rid, "置頂顯示", Callable(self, "_tray_toggle_top"))
 	idx_roam = tray_menu.add_check_item(tray_rid, "到處走 (螢幕邊緣)", Callable(self, "_tray_toggle_roam"))
 	tray_menu.set_item_checked(tray_rid, idx_always, true)
 	tray_menu.add_separator(tray_rid)
+	tray_menu.add_item(tray_rid, "🐱 寵物：貓咪 (Cat)", Callable(self, "_tray_set_skin").bind("cat2d"))
+	tray_menu.add_item(tray_rid, "🐶 寵物：阿米 (Ami)", Callable(self, "_tray_set_skin").bind("ami2d"))
+	tray_menu.add_item(tray_rid, "🦊 寵物：酷酷 (Kk)", Callable(self, "_tray_set_skin").bind("kk2d"))
+	tray_menu.add_separator(tray_rid)
+	tray_menu.add_item(tray_rid, "🔍 縮放：1.0x (標準)", Callable(self, "_tray_set_scale").bind(1.0))
+	tray_menu.add_item(tray_rid, "🔍 縮放：1.25x (適中)", Callable(self, "_tray_set_scale").bind(1.25))
+	tray_menu.add_item(tray_rid, "🔍 縮放：1.5x (推薦 4K)", Callable(self, "_tray_set_scale").bind(1.5))
+	tray_menu.add_item(tray_rid, "🔍 縮放：2.0x (特大)", Callable(self, "_tray_set_scale").bind(2.0))
+	tray_menu.add_separator(tray_rid)
 	tray_menu.add_item(tray_rid, "撫摸寵物 ❤", Callable(self, "_tray_pat"))
 	tray_menu.add_item(tray_rid, "餵食美味小點心 🍣", Callable(self, "_tray_feed"))
-	tray_menu.add_item(tray_rid, "系統資源 (htop) 📊", Callable(self, "_show_htop_bubble"))
-	tray_menu.add_item(tray_rid, "開啟對話／設定", Callable(self, "_open_ui"))
+	tray_menu.add_item(tray_rid, "📊 系統資源 (htop)", Callable(self, "_show_htop_bubble"))
+	tray_menu.add_item(tray_rid, "⚙ 系統設定與監控中心", Callable(self, "_open_ui"))
 	tray_menu.add_separator(tray_rid)
-	tray_menu.add_item(tray_rid, "徹底退出 AuraPet (結束後台)", Callable(self, "_tray_quit"))
+	tray_menu.add_item(tray_rid, "徹底退出 AuraPet", Callable(self, "_tray_quit"))
 	var icon := load("res://icon.png") as Texture2D
 	if icon == null:
 		print("tray: icon failed to load")
@@ -541,6 +619,8 @@ func _handle_event(t: String, msg: Dictionary) -> void:
 				_apply_click_through(bool(msg.clickThrough))
 			if msg.has("visible"):
 				_set_visible(bool(msg.visible))
+			if msg.has("petScale"):
+				_apply_scale(float(msg.petScale), false)
 			_sync_tray_checks()
 			_report_window_state()
 		"window.minimize":
@@ -560,8 +640,9 @@ func _handle_event(t: String, msg: Dictionary) -> void:
 			_sync_tray_checks()
 		"pose.set":
 			posture = str(msg.get("posture", posture))
-			if msg.has("skin"):
+			if msg.has("skin") and str(msg.skin) != "":
 				skin = str(msg.skin)
+				rig.set_skin(skin)
 			rig.set_posture(posture)
 			print("pose: %s skin=%s" % [posture, skin])
 		"react":
@@ -606,42 +687,31 @@ func _apply_state_sync(msg: Dictionary) -> void:
 		roam_enabled = bool(msg.roamEnabled)
 	if msg.has("nickname"):
 		nickname = str(msg.nickname)
-	if msg.has("skin"):
+	if msg.has("skin") and str(msg.skin) != "":
 		skin = str(msg.skin)
+		rig.set_skin(skin)
+	if msg.has("petScale"):
+		var ps = float(msg.petScale)
+		if ps > 0.0:
+			_apply_scale(ps, false)
 	posture = str(msg.get("posture", posture))
 	rig.set_posture(posture)
-	_apply_mode(str(msg.get("mode", mode)), false)
 	if msg.has("visibility"):
 		_set_visible(bool(msg.visibility))
 	_sync_tray_checks()
 	_report_window_state()
 
 func _apply_mode(next_mode: String, announce: bool) -> void:
-	if next_mode != "pet" and next_mode != "chat":
-		return
-	if next_mode == mode:
-		_apply_window_size(next_mode)
-		return
-	if mode == "pet":
-		pet_pos = DisplayServer.window_get_position()
-	mode = next_mode
+	mode = "pet"
 	_apply_window_size(mode)
 	if announce:
 		send_event("mode.changed", {"mode": mode})
-	print("body: mode=%s size=%s" % [mode, DisplayServer.window_get_size()])
 	_report_window_state()
 
 func _apply_window_size(m: String) -> void:
-	if m == "chat":
-		DisplayServer.window_set_size(CHAT_SIZE)
-		var wa := DisplayServer.screen_get_usable_rect(DisplayServer.window_get_current_screen())
-		var pos := wa.position + (wa.size - CHAT_SIZE) / 2
-		DisplayServer.window_set_position(pos)
-		rig.position = Vector2((CHAT_SIZE.x - 240) / 2, CHAT_SIZE.y - 290)
-	else:
-		DisplayServer.window_set_size(PET_SIZE)
-		DisplayServer.window_set_position(pet_pos)
-		rig.position = Vector2.ZERO
+	DisplayServer.window_set_size(pet_size)
+	DisplayServer.window_set_position(pet_pos)
+	rig.position = Vector2.ZERO
 	_place_bubble()
 	_place_hud()
 

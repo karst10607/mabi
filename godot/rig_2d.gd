@@ -30,6 +30,8 @@ var rig: Dictionary
 var has_legs := false
 var gait: Dictionary = {"swing": 0.32, "amp": [0.15, 0.15, 0.12, 0.12], "lift": [9, 9, 7, 7], "phase": [0.25, 0.75, 0.0, 0.5]}
 var prefix := ""
+var skin := "cat2d"
+var rig_scale := 1.0
 var posture := "sit"
 var walking := false
 var eye_override := -1.0
@@ -73,13 +75,53 @@ func _ready() -> void:
 	flick_timer_l = 4.0 + randf() * 4.0
 	flick_timer_r = 6.0 + randf() * 4.0
 
-func load_pose(pose: String) -> bool:
-	var next_prefix: String = POSE_PREFIX.get(pose, "cat")
+func set_skin(new_skin: String) -> bool:
+	if new_skin == "":
+		return false
+	skin = new_skin
+	prefix = ""
+	return load_pose("walk" if walking else posture)
+
+func set_rig_scale(val: float) -> void:
+	if val <= 0.0:
+		return
+	rig_scale = val
+	if mesh_instance != null and meta != null:
+		var W: float = meta.texW
+		var H: float = meta.texH
+		var s := minf(WIN_W / W, WIN_H / H) * rig_scale
+		mesh_instance.scale = Vector2(s, s)
+		mesh_instance.position = Vector2((WIN_W * rig_scale - W * s) * 0.5, (WIN_H * rig_scale - H * s) * 0.5)
+
+func get_asset_prefix(s: String, p: String) -> String:
+	var base := "cat"
+	if s.begins_with("ami") or s == "shiba":
+		base = "ami"
+	elif s.begins_with("kk") or s == "kitsune":
+		base = "kk"
+
+	if p == "walk":
+		return base + "_walk"
+	elif p in ["rest", "doze", "sleep"]:
+		return base + "_rest"
+	elif base == "cat":
+		if p == "side":
+			return "cat_side"
+		elif p == "belly":
+			return "cat_belly"
+		elif p == "run":
+			return "cat_run"
+	return base
+
+func load_pose(pose: String, new_skin: String = "") -> bool:
+	if new_skin != "":
+		skin = new_skin
+	var next_prefix: String = get_asset_prefix(skin, pose)
 	if next_prefix == prefix and mesh_instance != null:
 		return true
 	var meta_path := "res://assets/%s_meta.json" % next_prefix
 	if not ResourceLoader.exists(meta_path):
-		push_warning("rig: missing meta for pose %s (%s)" % [pose, next_prefix])
+		push_warning("rig: missing meta for pose %s (%s) skin=%s" % [pose, next_prefix, skin])
 		return false
 	meta = JSON.parse_string(FileAccess.get_file_as_string(meta_path))
 	if meta == null:
@@ -245,7 +287,7 @@ func _build_mesh(tex: Texture2D, tex_closed: Texture2D) -> void:
 	mat.set_shader_parameter("uPawPivotR", _world_point(paws[1].pivot, ox, oy) if paws.size() >= 2 else neck_v)
 	for k in range(4):
 		mat.set_shader_parameter("uLegPivot%d" % k, _world_point(legs[k].pivot, ox, oy) if legs.size() == 4 else Vector2.ZERO)
-	var ers: float = rig.eyeRadiusScale
+	var ers: float = float(rig.get("eyeRadiusScale", 2.0))
 	mat.set_shader_parameter("uEyeLUv", Vector2((eye_l.cx - ox) / W, (eye_l.cy - oy) / H))
 	mat.set_shader_parameter("uEyeRUv", Vector2((eye_r.cx - ox) / W, (eye_r.cy - oy) / H))
 	mat.set_shader_parameter("uEyeLRad", Vector2(eye_l.rx * ers / W, eye_l.ry * ers / H))
@@ -256,9 +298,9 @@ func _build_mesh(tex: Texture2D, tex_closed: Texture2D) -> void:
 	mesh_instance = MeshInstance2D.new()
 	mesh_instance.mesh = am
 	mesh_instance.material = mat
-	var s := minf(WIN_W / W, WIN_H / H)
+	var s := minf(WIN_W / W, WIN_H / H) * rig_scale
 	mesh_instance.scale = Vector2(s, s)
-	mesh_instance.position = Vector2((WIN_W - W * s) * 0.5, (WIN_H - H * s) * 0.5)
+	mesh_instance.position = Vector2((WIN_W * rig_scale - W * s) * 0.5, (WIN_H * rig_scale - H * s) * 0.5)
 	add_child(mesh_instance)
 
 func _world_point(p: Array, ox: float, oy: float) -> Vector2:

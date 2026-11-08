@@ -175,18 +175,37 @@ class TrayApp:
         item.set_sensitive(False)
         menu.append(item)
         menu.append(Gtk.SeparatorMenuItem())
-        item = Gtk.MenuItem(label="切換寵物/對話形態")
-        item.connect("activate", lambda _i: self.bridge.send({"t": "mode.toggle"}))
-        menu.append(item)
         self.visible_item = self._check("顯示 / 隱藏", not self.visible, self.toggle_visible)
         self.always_item = self._check("置頂顯示", self.always, self.toggle_always)
         self.roam_item = self._check("到處走 (螢幕邊緣)", self.roam, self.toggle_roam)
         menu.append(Gtk.SeparatorMenuItem())
-        item = Gtk.MenuItem(label="撫摸寵物")
+
+        # 換寵物
+        skin_menu_item = Gtk.MenuItem(label="🐾 選擇寵物")
+        skin_sub = Gtk.Menu()
+        for sid, sname in [("cat2d", "🐱 貓咪 (Cat)"), ("ami2d", "🐶 阿米 (Ami)"), ("kk2d", "🦊 酷酷 (Kk)")]:
+            item = Gtk.MenuItem(label=sname)
+            item.connect("activate", lambda _i, s=sid: self.bridge.send({"t": "settings.set", "patch": {"skin": s}}))
+            skin_sub.append(item)
+        skin_menu_item.set_submenu(skin_sub)
+        menu.append(skin_menu_item)
+
+        # 視窗縮放
+        scale_menu_item = Gtk.MenuItem(label="🔍 視窗縮放")
+        scale_sub = Gtk.Menu()
+        for sc, sname in [(1.0, "1.0x (標準)"), (1.25, "1.25x (適中)"), (1.5, "1.5x (推薦 4K)"), (2.0, "2.0x (特大)")]:
+            item = Gtk.MenuItem(label=sname)
+            item.connect("activate", lambda _i, val=sc: self.bridge.send({"t": "settings.set", "patch": {"petScale": val}}))
+            scale_sub.append(item)
+        scale_menu_item.set_submenu(scale_sub)
+        menu.append(scale_menu_item)
+
+        menu.append(Gtk.SeparatorMenuItem())
+        item = Gtk.MenuItem(label="撫摸寵物 ❤")
         item.connect("activate", lambda _i: self.bridge.send(
             {"t": "interaction", "kind": "pat", "source": "tray"}))
         menu.append(item)
-        item = Gtk.MenuItem(label="餵食美味小點心")
+        item = Gtk.MenuItem(label="餵食美味小點心 🍣")
         item.connect("activate", lambda _i: self.bridge.send(
             {"t": "interaction", "kind": "feed", "source": "tray"}))
         menu.append(item)
@@ -195,11 +214,11 @@ class TrayApp:
             {"t": "interaction", "kind": "sysinfo", "source": "tray"}))
         menu.append(item)
         menu.append(Gtk.SeparatorMenuItem())
-        item = Gtk.MenuItem(label="開啟對話／設定")
+        item = Gtk.MenuItem(label="⚙ 系統設定與監控中心")
         item.connect("activate", lambda _i: self.open_ui())
         menu.append(item)
         menu.append(Gtk.SeparatorMenuItem())
-        item = Gtk.MenuItem(label="徹底退出 AuraPet (結束後台)")
+        item = Gtk.MenuItem(label="徹底退出 AuraPet")
         item.connect("activate", lambda _i: self.bridge.send({"t": "window.close"}))
         menu.append(item)
         menu.show_all()
