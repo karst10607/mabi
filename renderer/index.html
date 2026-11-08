@@ -221,6 +221,7 @@
         <button class="tab-btn active" data-tab="tab-ai" title="AI 模型設定">🤖 AI 模型</button>
         <button class="tab-btn" data-tab="tab-pet" title="寵物外觀與個性">🐾 寵物外觀</button>
         <button class="tab-btn" data-tab="tab-system" title="系統與快捷鍵">🖥️ 系統設定</button>
+        <button class="tab-btn" data-tab="tab-monitor" title="系統負載與 htop 監控">📊 系統監控</button>
       </div>
 
       <div class="modal-body">
@@ -460,6 +461,69 @@
           <div class="form-group" style="margin-top: 14px;">
             <label>MCP server face（給本機 AI 助理呼叫）</label>
             <div id="mcp-status" class="field-hint">尚未連線 daemon</div>
+          </div>
+        </div>
+
+        <!-- Tab 4: System Monitor (htop style) -->
+        <div id="tab-monitor" class="tab-content">
+          <div class="monitor-header">
+            <span class="monitor-platform" id="monitor-platform-badge">LINUX</span>
+            <span class="monitor-uptime" id="monitor-uptime-text">Uptime: --</span>
+            <span class="monitor-load" id="monitor-load-text">Load: --</span>
+          </div>
+
+          <!-- CPU Bars Section -->
+          <div class="monitor-section">
+            <div class="monitor-section-title">
+              <span>CPU 使用率</span>
+              <span id="monitor-cpu-overall" style="color:#10b981;">0.0%</span>
+            </div>
+            <div id="monitor-cores-container" class="monitor-cores-grid"></div>
+          </div>
+
+          <!-- Memory & Swap Bars -->
+          <div class="monitor-section">
+            <div class="monitor-bar-group">
+              <div class="monitor-bar-header">
+                <span>Mem: <span id="monitor-mem-text">0 / 0 MB</span></span>
+                <span id="monitor-mem-percent">0%</span>
+              </div>
+              <div class="htop-bar-track">
+                <div id="monitor-mem-fill" class="htop-bar-fill htop-bar-mem" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <div class="monitor-bar-group" style="margin-top: 8px;">
+              <div class="monitor-bar-header">
+                <span>Swp: <span id="monitor-swap-text">0 / 0 MB</span></span>
+                <span id="monitor-swap-percent">0%</span>
+              </div>
+              <div class="htop-bar-track">
+                <div id="monitor-swap-fill" class="htop-bar-fill htop-bar-swap" style="width: 0%"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Top Processes Table -->
+          <div class="monitor-section">
+            <div class="monitor-section-title">
+              <span>主要進程 (Top Processes)</span>
+            </div>
+            <div class="htop-table-wrapper">
+              <table class="htop-table">
+                <thead>
+                  <tr>
+                    <th>PID</th>
+                    <th>名稱</th>
+                    <th>CPU%</th>
+                    <th>MEM%</th>
+                  </tr>
+                </thead>
+                <tbody id="monitor-processes-body">
+                  <tr><td colspan="4" style="text-align:center;color:#888;">載入中...</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 

@@ -113,6 +113,17 @@ const TOOLS = [
       required: ['query'],
       additionalProperties: false
     }
+  },
+  {
+    name: 'system.htop_summary',
+    description: 'Get an htop-like summary of system resources (CPU, Memory, Swap, and top processes).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topCount: { type: 'integer', minimum: 1, maximum: 50, description: 'Number of top processes to return (default 10)' }
+      },
+      additionalProperties: false
+    }
   }
 ];
 
@@ -299,6 +310,13 @@ function createMcpServer(options = {}) {
     return textResult(await mcpClient.search(query, { limit, sources: wanted }));
   }
 
+  async function toolHtopSummary(args) {
+    const sysinfo = require('./sysinfo');
+    const topCount = Number.isInteger(args.topCount) && args.topCount >= 1 && args.topCount <= 50 ? args.topCount : 10;
+    const info = await sysinfo.getSystemInfo({ topCount });
+    return textResult(info);
+  }
+
   async function callTool(name, args) {
     switch (name) {
       case 'pet.say':
@@ -311,6 +329,8 @@ function createMcpServer(options = {}) {
         return toolAskResult(args);
       case 'notes.search':
         return toolNotesSearch(args);
+      case 'system.htop_summary':
+        return toolHtopSummary(args);
       default:
         return null;
     }

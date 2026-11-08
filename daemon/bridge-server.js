@@ -447,6 +447,35 @@ function createBridgeServer(options = {}) {
         });
         return;
       }
+      case 'sysinfo.get': {
+        const sysinfo = require('./sysinfo');
+        sysinfo.getSystemInfo().then((info) => {
+          if (id != null) reply(ws, id, info);
+        }).catch((err) => {
+          if (id != null) fail(ws, id, 'internal-error', err.message);
+        });
+        return;
+      }
+      case 'sysinfo.subscribe': {
+        const sysinfo = require('./sysinfo');
+        if (!ws._sysinfoSubscribed) {
+          ws._sysinfoSubscribed = true;
+          ws._sysinfoCallback = (info) => {
+            emit(ws, 'sysinfo.data', info);
+          };
+          sysinfo.subscribe(ws._sysinfoCallback);
+        }
+        return;
+      }
+      case 'sysinfo.unsubscribe': {
+        const sysinfo = require('./sysinfo');
+        if (ws._sysinfoSubscribed) {
+          ws._sysinfoSubscribed = false;
+          sysinfo.unsubscribe();
+          ws._sysinfoCallback = null;
+        }
+        return;
+      }
       default:
         // Unknown type: reply to requests, ignore fire-and-forget events.
         if (id != null) fail(ws, id, 'unknown-type', `unknown message type: ${msg.t}`);
@@ -475,6 +504,15 @@ function createBridgeServer(options = {}) {
     ws.on('close', () => {
       clearTimeout(ws.helloTimeout);
       uiClients.delete(ws);
+      if (ws._sysinfoSubscribed) {
+        ws._sysinfoSubscribed = false;
+        try {
+          const sysinfo = require('./sysinfo');
+          sysinfo.unsubscribe();
+        } catch {
+          /* ignore */
+        }
+      }
       if (ws.chat && ws.chat.active) {
         ai.abortCurrent();
         ws.chat.active = false;

@@ -1569,3 +1569,130 @@ label {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* ================= HTOP / SYSTEM MONITOR ================= */
+.monitor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+.monitor-platform {
+  background: #4f46e5;
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 10px;
+}
+.monitor-uptime, .monitor-load {
+  color: var(--text-muted);
+}
+.monitor-section {
+  margin-bottom: 12px;
+}
+.monitor-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+}
+.monitor-cores-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.htop-core-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+}
+.core-num {
+  width: 14px;
+  color: #a5b4fc;
+}
+.core-pct {
+  width: 36px;
+  text-align: right;
+  color: var(--text-muted);
+}
+.htop-bar-track {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.htop-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.monitor-bar-group {
+  margin-bottom: 6px;
+}
+.monitor-bar-header {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+.htop-bar-mem {
+  background: #6366f1;
+}
+.htop-bar-swap {
+  background: #ec4899;
+}
+.htop-table-wrapper {
+  max-height: 130px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+}
+.htop-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  text-align: left;
+}
+.htop-table th {
+  position: sticky;
+  top: 0;
+  background: rgba(20, 20, 30, 0.95);
+  padding: 4px 6px;
+  color: #a5b4fc;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.htop-table td {
+  padding: 3px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text-main);
+  white-space: nowrap;
+}
+.proc-name {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.proc-pid {
+  color: var(--text-muted);
+}
+.proc-cpu {
+  color: #34d399;
+}
+.proc-mem {
+  color: #60a5fa;
+}
