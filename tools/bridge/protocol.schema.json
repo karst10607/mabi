@@ -431,7 +431,7 @@
       }
     },
     "sysinfo.get": {
-      "dir": ["ui>brain"],
+      "dir": ["ui>brain", "body>brain"],
       "forms": ["request"],
       "reply": {
         "required": ["cpu", "memory", "swap", "processes", "uptime"],
@@ -480,15 +480,15 @@
       }
     },
     "sysinfo.subscribe": {
-      "dir": ["ui>brain"],
+      "dir": ["ui>brain", "body>brain"],
       "forms": ["event"]
     },
     "sysinfo.unsubscribe": {
-      "dir": ["ui>brain"],
+      "dir": ["ui>brain", "body>brain"],
       "forms": ["event"]
     },
     "sysinfo.data": {
-      "dir": ["brain>ui"],
+      "dir": ["brain>ui", "brain>body"],
       "forms": ["event"],
       "required": ["cpu", "memory", "swap", "processes", "uptime"],
       "fields": {

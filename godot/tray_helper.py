@@ -190,6 +190,10 @@ class TrayApp:
         item.connect("activate", lambda _i: self.bridge.send(
             {"t": "interaction", "kind": "feed", "source": "tray"}))
         menu.append(item)
+        item = Gtk.MenuItem(label="📊 系統資源 (htop)")
+        item.connect("activate", lambda _i: self.bridge.send(
+            {"t": "interaction", "kind": "sysinfo", "source": "tray"}))
+        menu.append(item)
         menu.append(Gtk.SeparatorMenuItem())
         item = Gtk.MenuItem(label="開啟對話／設定")
         item.connect("activate", lambda _i: self.open_ui())

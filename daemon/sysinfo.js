@@ -8,8 +8,7 @@ let lastCpuStats = null;
 let lastSampleTime = 0;
 let cachedSnapshot = null;
 let monitorTimer = null;
-let subscribersCount = 0;
-let onDataCallback = null;
+const subscribers = new Set();
 
 function parseProcStatLine(line) {
   const parts = line.trim().split(/\s+/);
@@ -200,18 +199,25 @@ async function getSystemInfo(options = {}) {
 }
 
 function subscribe(callback) {
-  subscribersCount++;
-  onDataCallback = callback;
+  if (typeof callback === 'function') {
+    subscribers.add(callback);
+    if (cachedSnapshot) {
+      try { callback(cachedSnapshot); } catch {}
+    }
+  }
   if (!monitorTimer) {
-    // Initial call
     getSystemInfo().then((info) => {
-      if (onDataCallback) onDataCallback(info);
+      for (const cb of subscribers) {
+        try { cb(info); } catch {}
+      }
     }).catch(() => {});
 
     monitorTimer = setInterval(async () => {
       try {
         const info = await getSystemInfo();
-        if (onDataCallback) onDataCallback(info);
+        for (const cb of subscribers) {
+          try { cb(info); } catch {}
+        }
       } catch {
         /* ignore polling errors */
       }
@@ -220,12 +226,15 @@ function subscribe(callback) {
   }
 }
 
-function unsubscribe() {
-  subscribersCount = Math.max(0, subscribersCount - 1);
-  if (subscribersCount === 0 && monitorTimer) {
+function unsubscribe(callback) {
+  if (callback) {
+    subscribers.delete(callback);
+  } else {
+    subscribers.clear();
+  }
+  if (subscribers.size === 0 && monitorTimer) {
     clearInterval(monitorTimer);
     monitorTimer = null;
-    onDataCallback = null;
   }
 }
 

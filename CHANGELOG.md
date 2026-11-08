@@ -2,6 +2,17 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.14.1] - 2026-11-08
+
+### Added
+
+- **桌面寵物旁即時 htop 資訊側欄與點擊互動氣泡（#36）**：
+  - 調整 Godot Body 視窗寬度至 360px，採用透明穿透雙欄佈局，寵物本體維持在左側，身旁右側新增 `HTOP LIVE` 懸浮玻璃質感側欄面板。
+  - 即時呈現 CPU 佔用率（彩色動態進度條）、RAM 佔用率（彩色動態進度條）與主要耗能進程（Top process）。
+  - 點擊寵物或 HUD 面板立即跳出 3.5 秒淡出的詳細 htop 系統狀態氣泡（包含 CPU、RAM、Top processes 等），並配合寵物開心情感動畫。
+  - 系統匣（Ayatana / NativeMenu）新增「📊 系統資源 (htop)」快捷選單。
+  - 協議與後台優化：`protocol.schema.json` 允許 `body>brain` 訂閱與 `brain>body` 接收 `sysinfo.data`；`daemon/sysinfo.js` 升級為回呼集合（`Set`），支援 Web UI 與桌面寵物同時獨立訂閱。
+
 ## [1.14.0] - 2026-11-08
 
 ### Added

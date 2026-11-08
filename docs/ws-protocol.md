@@ -117,10 +117,10 @@ MCP server face 由 `daemon/mcp-server.js` 以標準 Streamable HTTP（127.0.0.1
 ### sysinfo（系統資源／htop 資訊，Linux 優先＋跨平台 fallback）
 | t | 方向 | 欄位 | 語意 |
 | --- | --- | --- | --- |
-| sysinfo.get | ui→brain | (id) | 取得即時系統資源快照（reply 帶 cpu, memory, swap, processes, uptime） |
-| sysinfo.subscribe | ui→brain | — | 訂閱即時推播（brain 定時採集並廣播 sysinfo.data） |
-| sysinfo.unsubscribe | ui→brain | — | 取消訂閱（無訂閱者時 brain 停止背景採集） |
-| sysinfo.data | brain→ui | cpu, memory, swap, processes, uptime | 即時推播系統監控數據 |
+| sysinfo.get | body/ui→brain | (id) | 取得即時系統資源快照（reply 帶 cpu, memory, swap, processes, uptime） |
+| sysinfo.subscribe | body/ui→brain | — | 訂閱即時推播（brain 定時採集並廣播 sysinfo.data） |
+| sysinfo.unsubscribe | body/ui→brain | — | 取消訂閱（無訂閱者時 brain 停止背景採集） |
+| sysinfo.data | brain→body/ui | cpu, memory, swap, processes, uptime | 即時推播系統監控數據 |
 
 ## 5. 舊 preload channel 對照（遷移血統）
 

@@ -13,7 +13,7 @@ extends Node2D
 const PROTOCOL_VERSION := 1
 const DEFAULT_PORT := 47821
 const DEFAULT_UI_PORT := 47830
-const PET_SIZE := Vector2i(240, 290)
+const PET_SIZE := Vector2i(360, 290)
 const CHAT_SIZE := Vector2i(460, 680)
 const ROAM := {"minDistance": 110, "speed": 78.0, "tick": 0.033}
 const PING_INTERVAL := 15.0
@@ -27,6 +27,11 @@ var bubble_panel: PanelContainer
 var bubble_label: RichTextLabel
 var bubble_timer := 0.0
 var font: SystemFont
+var hud_panel: PanelContainer
+var hud_label: RichTextLabel
+var last_cpu := 0.0
+var last_mem := 0.0
+var last_top_procs: Array = []
 
 var config_path := ""
 var token := ""
@@ -104,6 +109,7 @@ func _ready() -> void:
 		get_tree().quit(1)
 		return
 	_build_bubble()
+	_build_hud()
 	if use_tray:
 		_setup_tray()
 	_place_initial_window()
@@ -246,6 +252,54 @@ func _build_bubble() -> void:
 	bubble_panel.visible = false
 	layer.add_child(bubble_panel)
 
+func _build_hud() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 9
+	add_child(layer)
+	hud_panel = PanelContainer.new()
+	hud_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.06, 0.08, 0.13, 0.90)
+	style.corner_radius_top_left = 10
+	style.corner_radius_top_right = 10
+	style.corner_radius_bottom_left = 10
+	style.corner_radius_bottom_right = 10
+	style.border_width_left = 1
+	style.border_width_top = 1
+	style.border_width_right = 1
+	style.border_width_bottom = 1
+	style.border_color = Color(0.24, 0.30, 0.42, 0.85)
+	style.content_margin_left = 10
+	style.content_margin_right = 10
+	style.content_margin_top = 8
+	style.content_margin_bottom = 8
+	hud_panel.add_theme_stylebox_override("panel", style)
+
+	hud_label = RichTextLabel.new()
+	hud_label.bbcode_enabled = true
+	hud_label.fit_content = true
+	hud_label.scroll_active = false
+	hud_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	hud_label.custom_minimum_size = Vector2(100, 0)
+	hud_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud_label.add_theme_font_override("normal_font", font)
+	hud_label.add_theme_font_size_override("normal_font_size", 11)
+	hud_label.text = "[b][color=#94a3b8]HTOP[/color][/b] [color=#64748b]LIVE[/color]\n[color=#34d399]⚡ CPU  --%[/color]\n[color=#60a5fa]🧠 RAM  --%[/color]"
+	hud_panel.add_child(hud_label)
+	hud_panel.visible = true
+	layer.add_child(hud_panel)
+	_place_hud()
+
+func _place_hud() -> void:
+	if hud_panel == null or not hud_panel.visible:
+		return
+	hud_panel.reset_size()
+	if mode == "pet":
+		hud_panel.position = Vector2(236, 105)
+	else:
+		var size := DisplayServer.window_get_size()
+		hud_panel.position = Vector2(roundf((size.x - hud_panel.size.x) * 0.5), size.y - hud_panel.size.y - 10)
+
 func _setup_tray() -> void:
 	if not DisplayServer.has_feature(DisplayServer.FEATURE_STATUS_INDICATOR):
 		# Godot 4.7 only implements status indicators on Windows/macOS.
@@ -267,6 +321,7 @@ func _setup_tray() -> void:
 	tray_menu.add_separator(tray_rid)
 	tray_menu.add_item(tray_rid, "撫摸寵物 ❤", Callable(self, "_tray_pat"))
 	tray_menu.add_item(tray_rid, "餵食美味小點心 🍣", Callable(self, "_tray_feed"))
+	tray_menu.add_item(tray_rid, "系統資源 (htop) 📊", Callable(self, "_show_htop_bubble"))
 	tray_menu.add_item(tray_rid, "開啟對話／設定", Callable(self, "_open_ui"))
 	tray_menu.add_separator(tray_rid)
 	tray_menu.add_item(tray_rid, "徹底退出 AuraPet (結束後台)", Callable(self, "_tray_quit"))
@@ -464,6 +519,7 @@ func _handle_message(msg: Dictionary) -> void:
 				ping_timer = 0.0
 				print("bridge: ready session=%s protocol=%s" % [msg.get("session", ""), msg.get("protocol", "")])
 				_report_window_state()
+				send_event("sysinfo.subscribe")
 			else:
 				print("bridge: hello rejected: %s" % JSON.stringify(msg.get("error", {})))
 				_disconnect("hello rejected")
@@ -516,6 +572,10 @@ func _handle_event(t: String, msg: Dictionary) -> void:
 				_show_bubble("好好吃！", 1400)
 			elif emotion == "happy":
 				_show_bubble("好開心～", 1400)
+			elif emotion == "sysinfo":
+				_show_htop_bubble()
+		"sysinfo.data":
+			_apply_sysinfo(msg)
 		"say":
 			var ttl := int(msg.get("ttlMs", 3000))
 			_show_bubble(str(msg.get("text", "")), maxi(400, ttl))
@@ -583,6 +643,7 @@ func _apply_window_size(m: String) -> void:
 		DisplayServer.window_set_position(pet_pos)
 		rig.position = Vector2.ZERO
 	_place_bubble()
+	_place_hud()
 
 func _apply_always_on_top(on: bool) -> void:
 	always_on_top = on
@@ -655,6 +716,67 @@ func _place_bubble() -> void:
 	var size := DisplayServer.window_get_size()
 	bubble_panel.reset_size()
 	bubble_panel.position = Vector2(roundf((size.x - bubble_panel.size.x) * 0.5), 4)
+
+func _show_htop_bubble() -> void:
+	var lines := []
+	lines.append("⚡ CPU: %.1f%%" % last_cpu)
+	lines.append("🧠 RAM: %.1f%%" % last_mem)
+	if last_top_procs.size() > 0:
+		var top_names := []
+		for i in range(mini(2, last_top_procs.size())):
+			var p = last_top_procs[i]
+			if p is Dictionary:
+				top_names.append("%s (%.0f%%)" % [str(p.get("name", "proc")), float(p.get("cpu", 0.0))])
+		if top_names.size() > 0:
+			lines.append("🔥 " + ", ".join(top_names))
+	_show_bubble("\n".join(lines), 3500)
+
+func _make_bar(pct: float, width: int = 7) -> String:
+	var filled := clampi(int(round(pct / 100.0 * width)), 0, width)
+	var bar := ""
+	for i in range(filled):
+		bar += "■"
+	for i in range(width - filled):
+		bar += "□"
+	return bar
+
+func _apply_sysinfo(msg: Dictionary) -> void:
+	if msg.has("cpu") and msg.cpu is Dictionary:
+		if typeof(msg.cpu.get("overall")) in [TYPE_FLOAT, TYPE_INT]:
+			last_cpu = float(msg.cpu.overall)
+		elif typeof(msg.cpu.get("usagePercent")) in [TYPE_FLOAT, TYPE_INT]:
+			last_cpu = float(msg.cpu.usagePercent)
+	if msg.has("memory") and msg.memory is Dictionary:
+		if typeof(msg.memory.get("percent")) in [TYPE_FLOAT, TYPE_INT]:
+			last_mem = float(msg.memory.percent)
+		elif typeof(msg.memory.get("usedPercent")) in [TYPE_FLOAT, TYPE_INT]:
+			last_mem = float(msg.memory.usedPercent)
+	if msg.has("processes") and msg.processes is Array:
+		last_top_procs = msg.processes
+	if hud_label != null:
+		var cpu_col := "#34d399"
+		if last_cpu >= 80.0:
+			cpu_col = "#f87171"
+		elif last_cpu >= 50.0:
+			cpu_col = "#fbbf24"
+		var mem_col := "#60a5fa"
+		if last_mem >= 85.0:
+			mem_col = "#f87171"
+		elif last_mem >= 65.0:
+			mem_col = "#fbbf24"
+		var top_line := ""
+		if last_top_procs.size() > 0 and last_top_procs[0] is Dictionary:
+			var p0 = last_top_procs[0]
+			var pname: String = str(p0.get("name", ""))
+			if pname.length() > 9:
+				pname = pname.substr(0, 8) + "…"
+			top_line = "\n[color=#94a3b8]🔥[/color] [color=#e2e8f0]%s[/color]" % pname
+
+		hud_label.text = "[b][color=#94a3b8]HTOP[/color][/b] [color=#64748b]LIVE[/color]\n" + \
+			"[color=%s]⚡ CPU %.0f%%[/color]\n[color=%s]%s[/color]\n" % [cpu_col, last_cpu, cpu_col, _make_bar(last_cpu, 7)] + \
+			"[color=%s]🧠 RAM %.0f%%[/color]\n[color=%s]%s[/color]" % [mem_col, last_mem, mem_col, _make_bar(last_mem, 7)] + \
+			top_line
+		_place_hud()
 
 # ----------------------------------------------------------------- roam ---
 
@@ -747,6 +869,7 @@ func _input(event: InputEvent) -> void:
 			else:
 				send_event("interaction", {"kind": "click", "source": "window"})
 				rig.play_react("happy")
+				_show_htop_bubble()
 				print("interaction: click")
 		return
 	if event is InputEventMouseMotion and left_down:
@@ -799,6 +922,7 @@ func _process(delta: float) -> void:
 		if bubble_timer <= 0.0:
 			bubble_panel.visible = false
 	_place_bubble()
+	_place_hud()
 
 func _take_shot() -> void:
 	var img := get_viewport().get_texture().get_image()
