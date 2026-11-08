@@ -443,7 +443,7 @@ function createBridgeServer(options = {}) {
         if (!body) return;
         emit(body, 'react', {
           kind: msg.kind,
-          emotion: msg.kind === 'feed' ? 'eating' : 'happy'
+          emotion: msg.kind === 'feed' ? 'eating' : (msg.kind === 'sysinfo' ? 'sysinfo' : 'happy')
         });
         return;
       }
@@ -471,7 +471,7 @@ function createBridgeServer(options = {}) {
         const sysinfo = require('./sysinfo');
         if (ws._sysinfoSubscribed) {
           ws._sysinfoSubscribed = false;
-          sysinfo.unsubscribe();
+          sysinfo.unsubscribe(ws._sysinfoCallback);
           ws._sysinfoCallback = null;
         }
         return;
@@ -508,7 +508,7 @@ function createBridgeServer(options = {}) {
         ws._sysinfoSubscribed = false;
         try {
           const sysinfo = require('./sysinfo');
-          sysinfo.unsubscribe();
+          sysinfo.unsubscribe(ws._sysinfoCallback);
         } catch {
           /* ignore */
         }

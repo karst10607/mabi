@@ -18,8 +18,9 @@
 1. 一次只允許一個 agent session 動這個 repo。每輪開始先檢查：若有 label `agent-working`
    且 `updatedAt` 在 90 分鐘內的 issue，視為另一個 session 正在跑——本輪直接結束，
    不做任何 git 操作。
-2. 選題：open、label `agent-ready`、body 的 `Blocked by` 所列 issue 全數關閉、編號最小者。
-   沒有就停——**不要自己開新 issue**。
+2. 選題與自主建單：
+   - 既有題選取：open、label `agent-ready`、body 的 `Blocked by` 所列 issue 全數關閉、編號最小者。
+   - 自主建單與 triage：遇使用者提出新需求或發現現有 bug 時，允許 agent 主動開立 issue，清楚填寫現況、預期行為、DoD 與驗證方式，打上適當標籤（如 `bug` / `enhancement` 與 `agent-ready`），依優先度進行 triage 後依序排入開發。
 3. 開工：label 換 `agent-working`，在 issue 留言一行計畫。
 4. 分支 `agent/issue-<N>`；完成後 push、開 PR（body 寫 `Closes #N`＋驗證證據）。
 5. `checks` CI 綠 → squash merge 回 main；紅兩次 → label `agent-blocked`、留言原因、跳過該題。
