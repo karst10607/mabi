@@ -184,7 +184,9 @@ Honoka 管線事件（Telegram 收連結／下載進度／筆記建立／錯誤�
     "token": "<honoka bridgeToken，見 ~/honoka-docs/.honoka/bridge-settings.json>"
   }
 }
-```重連 backoff 1s→30s，stdio 子進程
+```
+
+完整設定、驗證與故障排除見 **[docs/honoka-integration.md](docs/honoka-integration.md)**。重連 backoff 1s→30s，stdio 子進程
 會隨 daemon 停止。驗證：`node tools/mcp/upstream-smoke.mjs --from-joplin`（真實上游
 tools/list＋tools/call，並斷言 token 不外洩）。
 

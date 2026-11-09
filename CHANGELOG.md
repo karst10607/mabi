@@ -2,6 +2,15 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.14.6] - 2026-11-09
+
+### Docs
+
+- **Honoka 整合收尾（#54）**：
+  - `AGENTS.md` §8.1 補 Honoka 邊界：獨立 repo／daemon 唯一 owner、只走 MCP（pull）＋`/events` SSE（push，复用 `say` 氣泡）、憑證與 payload 邊界、程序分離。
+  - 新 `docs/honoka-integration.md`：架構圖、honoka／mabi 設定步驟（Telegram、Joplin、`mcpUpstreams`、`honokaEvents`、launcher）、驗證指令、故障排除，與 AGENTS.md 雙向連結。
+  - README 連到整合指南。
+
 ## [1.14.5] - 2026-11-09
 
 ### Added

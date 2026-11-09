@@ -128,3 +128,15 @@ flowchart TD
    - **Phase 2**：遵循 `pet-profile.json` 共享格式實現寵物外觀與紀念日同步。
    - **Phase 3**：未來僅允許透過 Godot 獨立擴充包（`.pck`）形式動態載入靈園 2.5D 箱庭空間。
 
+### 8.1 Honoka 邊界（honoka-publish）
+
+整合細節見 **[docs/honoka-integration.md](docs/honoka-integration.md)**（架構圖、設定、驗證、故障排除）。
+
+- **獨立 repo／獨立 daemon**：`karst10607/honoka-publish` 是唯一 owner —— yt-dlp 下載、Chromium 截圖、Joplin／Notion／AnyType 寫入都只由它執行。mabi **不得 import** honoka 程式碼，也不得把兩者合成 monorepo。
+- **只走兩個標準面**：
+  - **MCP（pull）**：`mcpUpstreams` 以 stdio 接 honoka MCP（`save_url`／`download_video`／`search_notes`／`list_inbox`／`get_job_status`），工具名 `honoka.<tool>`。
+  - **事件（push）**：`honokaEvents` 訂閱 honoka `GET /events`（SSE），經既有 WS `say` 顯示氣泡；**不新增 WS 訊息 type**（additive-only，需變更時先更新 `docs/ws-protocol.md`）。
+- **憑證邊界**：honoka 的 Joplin/Telegram token 只在其 `HONOKA_DIR/.honoka/bridge-settings.json`（0600）；mabi 只持有 honoka `bridgeToken`（存於 `honokaEvents.token`），`settings.get` 一律 redact（`auth: "configured"`）。
+- **事件 payload 不含 token／筆記內文**（僅 URL／標題／狀態）；桌寵離線可丟棄事件，不佇列轟炸。
+- **程序分離**：可在 honoka 端用 `honoka-launch` 拉起桌寵（detached child），但不得共享 runtime 或生命周期。
+
