@@ -148,6 +148,9 @@ Windows `%APPDATA%\aurapet-desktop`）列出既有筆記 server，工具以 `<se
   "mcpUpstreams": [
     { "name": "joplin", "transport": "streamable-http",
       "url": "http://127.0.0.1:41184/mcp", "token": "<Joplin api.token>", "tokenIn": "query" },
+    { "name": "honoka", "transport": "stdio",
+      "command": "node", "args": ["/path/to/honoka-publish/bin/honoka-publish.js"],
+      "env": { "HONOKA_DIR": "/home/<user>/honoka-docs" } },
     { "name": "obsidian", "transport": "stdio",
       "command": "npx", "args": ["-y", "mcp-obsidian"], "env": { "OBSIDIAN_API_KEY": "<key>" } },
     { "name": "jira", "transport": "stdio",
@@ -163,8 +166,12 @@ Windows `%APPDATA%\aurapet-desktop`）列出既有筆記 server，工具以 `<se
 ```
 
 Joplin 需在設定開啟 Web Clipper（API token 在「Web Clipper → API token」）；其內建 endpoint
-只吃 `?token=`，所以 `tokenIn: "query"`。token／env 只寫 config，不進 log、WS 或 `mcp.status`；
-`settings.get` 會回傳 `auth: "configured"` 而不是憑證。重連 backoff 1s→30s，stdio 子進程
+只吃 `?token=`，所以 `tokenIn: "query"`。Honoka（honoka-publish）以 stdio 接入，暴露
+`save_url`／`download_video`（背景 ticket＋`get_job_status`）、`search_notes`、`list_inbox`；
+其 Joplin 憑證讀自身的 `HONOKA_DIR/.honoka/bridge-settings.json`，不必放進 mabi 設定。
+`notes.search` 會聚合 honoka 的 `search_notes`；`pet.ask` 對「筆記」相關問題會先搜上游筆記、
+把命中結果注入 prompt（ticket 結果附 `context: {hits, sources}`）。token／env 只寫 config，
+不進 log、WS 或 `mcp.status`；`settings.get` 會回傳 `auth: "configured"`／`envKeys` 而不是憑證。重連 backoff 1s→30s，stdio 子進程
 會隨 daemon 停止。驗證：`node tools/mcp/upstream-smoke.mjs --from-joplin`（真實上游
 tools/list＋tools/call，並斷言 token 不外洩）。
 

@@ -121,6 +121,11 @@ lists servers:
     // any stdio MCP server
     { "name": "obsidian", "transport": "stdio",
       "command": "npx", "args": ["-y", "mcp-obsidian"], "env": { "OBSIDIAN_API_KEY": "<key>" } },
+    // Honoka (honoka-publish) MCP over stdio: save_url / download_video
+    // (async tickets), search_notes, list_inbox (issue #52)
+    { "name": "honoka", "transport": "stdio",
+      "command": "node", "args": ["/path/to/honoka-publish/bin/honoka-publish.js"],
+      "env": { "HONOKA_DIR": "/home/<user>/honoka-docs" } },
     // Jira stdio MCP server (issue #32)
     { "name": "jira", "transport": "stdio",
       "command": "npx", "args": ["-y", "@modelcontextprotocol/server-jira"],
@@ -135,6 +140,10 @@ lists servers:
 ```
 
 - Namespacing: upstream `search_notes` on `joplin` becomes `joplin.search_notes`.
+- `notes.search` picks the most search-like tool per upstream (honoka's
+  `search_notes` included) and merges results; `pet.ask` questions mentioning
+  notes (筆記/記事/存過/…) first run that search and inject the hits into the
+  prompt — the ticket's `pet.ask.result` carries `context: { hits, sources }`.
 - Capabilities: client declares only `tools`; sampling/roots are not forwarded.
 - Lifecycle: exponential backoff 1s→30s, `reload()` diffs config, stdio child
   processes are closed on `stop()`; states are `configured`/`connecting`/

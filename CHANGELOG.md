@@ -2,6 +2,18 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.14.4] - 2026-11-09
+
+### Added
+
+- **Honoka 上游 MCP 接入（#52）**：
+  - `mcpUpstreams` 新增 honoka（honoka-publish）stdio 範例：`save_url`／`download_video`（背景 ticket＋`get_job_status`）、`search_notes`、`list_inbox` 以 `honoka.<tool>` 命名曝光。
+  - `notes.search` 聚合 honoka 的 `search_notes` 結果（沿用既有 search tool 偵測與 limit 傳遞）。
+  - `pet.ask` 對筆記相關問題（筆記／記事／存過／…）先搜尋上游筆記並把命中結果注入 prompt；`pet.ask.result` 附 `context: { hits, sources }` 供除錯與驗證。
+  - `settings.get` 對 honoka 的 stdio env 以 `envKeys` 呈現，secret 值不進 log／WS／status。
+  - 冒煙測試新增 honoka mock stdio upstream（ready、toolCount、命名空間、save_url ticket、notes.search 來源過濾、pet.ask 筆記問題 context、token redaction）。
+  - README／daemon README／設定頁補 honoka 設定說明。
+
 ## [1.14.3] - 2026-11-08
 
 ### Added

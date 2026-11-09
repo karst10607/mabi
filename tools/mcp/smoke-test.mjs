@@ -308,6 +308,63 @@ process.stdin.on('end', () => process.exit(0));
   return script;
 }
 
+function writeFakeHonokaServer() {
+  const script = path.join(root, 'fake-honoka-server.cjs');
+  fs.writeFileSync(script, `'use strict';
+const readline = require('readline');
+const send = (message) => process.stdout.write(JSON.stringify(message) + '\\n');
+const rl = readline.createInterface({ input: process.stdin });
+rl.on('line', (line) => {
+  let message;
+  try { message = JSON.parse(line); } catch { return; }
+  const hasId = Object.hasOwn(message, 'id');
+  switch (message.method) {
+    case 'initialize':
+      send({ jsonrpc: '2.0', id: message.id, result: {
+        protocolVersion: '2025-06-18',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'honoka-publish', version: '1.11.5' }
+      } });
+      return;
+    case 'notifications/initialized':
+      return;
+    case 'tools/list':
+      send({ jsonrpc: '2.0', id: message.id, result: { tools: [
+        { name: 'save_url', description: 'Ingest a URL into Joplin', inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } },
+        { name: 'download_video', description: 'Download a video URL', inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } },
+        { name: 'search_notes', description: 'Search Joplin notes', inputSchema: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'number' } }, required: ['query'] } },
+        { name: 'list_inbox', description: 'List queued inbox files', inputSchema: { type: 'object', properties: { limit: { type: 'number' } } } },
+        { name: 'get_job_status', description: 'Poll an ingestion ticket', inputSchema: { type: 'object', properties: { ticketId: { type: 'string' } }, required: ['ticketId'] } }
+      ] } });
+      return;
+    case 'tools/call': {
+      const name = message.params && message.params.name;
+      const args = (message.params && message.params.arguments) || {};
+      let payload;
+      if (name === 'search_notes') {
+        payload = { ok: true, count: 1, items: [{ id: 'joplin_note_1', title: 'Honoka Joplin note', parent_id: 'nb_honoka', updated_time: 1730000000000 }], hasMore: false };
+      } else if (name === 'save_url') {
+        payload = { ok: true, ticketId: 'job_mock_1', status: 'running', type: 'save_url', url: args.url };
+      } else if (name === 'get_job_status') {
+        payload = { ok: true, ticketId: args.ticketId, status: 'done', result: { ok: true, noteId: 'joplin_note_2' } };
+      } else if (name === 'list_inbox') {
+        payload = { ok: true, count: 0, items: [] };
+      } else {
+        send({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'tool not found' } });
+        return;
+      }
+      send({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: JSON.stringify(payload) }] } });
+      return;
+    }
+    default:
+      if (hasId) send({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'method not found' } });
+  }
+});
+process.stdin.on('end', () => process.exit(0));
+`);
+  return script;
+}
+
 async function main() {
   bridge = createBridgeServer({ configStore: store, port: 0, brainVersion: 'smoke', log: quiet });
   await bridge.start();
@@ -464,8 +521,10 @@ async function main() {
   const upstreamUrl = `http://127.0.0.1:${upstream.address().port}/mcp`;
   const stdioScript = writeFakeStdioServer();
   const jiraScript = writeFakeJiraServer();
+  const honokaScript = writeFakeHonokaServer();
   const upstreamToken = 'smoke-upstream-token-value';
   const jiraSecretToken = 'super-secret-jira-token-9999';
+  const honokaSecretToken = 'honoka-joplin-token-secret-777';
   store.patch({
     mcpUpstreams: [
       { name: 'fake-notes', url: upstreamUrl, transport: 'streamable-http', token: upstreamToken },
@@ -480,6 +539,16 @@ async function main() {
           JIRA_EMAIL: 'user@test.com',
           JIRA_API_TOKEN: jiraSecretToken
         }
+      },
+      {
+        name: 'honoka',
+        transport: 'stdio',
+        command: process.execPath,
+        args: [honokaScript],
+        env: {
+          HONOKA_DIR: path.join(root, 'honoka-docs'),
+          HONOKA_JOPLIN_TOKEN: honokaSecretToken
+        }
       }
     ]
   });
@@ -490,13 +559,19 @@ async function main() {
   check('stdio upstream reaches ready', upstreamStatus.find((s) => s.name === 'stdio-notes')?.state === 'ready');
   check('jira upstream reaches ready', upstreamStatus.find((s) => s.name === 'jira')?.state === 'ready');
   check('status reports real tool counts', upstreamStatus.find((s) => s.name === 'jira')?.toolCount === 2, JSON.stringify(upstreamStatus.map((s) => ({ name: s.name, tools: s.toolCount }))));
+  check('honoka upstream reaches ready with its tools', upstreamStatus.find((s) => s.name === 'honoka')?.state === 'ready' && upstreamStatus.find((s) => s.name === 'honoka')?.toolCount === 5);
 
   const namespaced = mcpClient.getTools().map((tool) => tool.name);
   check('tools are namespaced <server>.<tool>', namespaced.includes('fake-notes.search_notes') && namespaced.includes('stdio-notes.search_notes') && namespaced.includes('jira.jira_search') && namespaced.includes('jira.get_issue'), namespaced.join(', '));
+  check('honoka tools are namespaced too', namespaced.includes('honoka.search_notes') && namespaced.includes('honoka.save_url') && namespaced.includes('honoka.get_job_status'));
   const directCall = await mcpClient.callTool('fake-notes.search_notes', { query: 'cat' });
   check('namespaced tools/call succeeds', directCall?.content?.[0]?.type === 'text');
   const directJiraCall = await mcpClient.callTool('jira.jira_search', { jql: 'project = PROJ' });
   check('namespaced jira tools/call succeeds', directJiraCall?.content?.[0]?.type === 'text');
+  const honokaTicket = await mcpClient.callTool('honoka.save_url', { url: 'https://example.com/honoka' });
+  check('honoka save_url returns a job ticket', honokaTicket?.content?.[0]?.text?.includes('job_mock_1'));
+  const honokaJob = await mcpClient.callTool('honoka.get_job_status', { ticketId: 'job_mock_1' });
+  check('honoka get_job_status reaches done', honokaJob?.content?.[0]?.text?.includes('"done"'));
 
   await waitFor(() => uiClient.events.some((message) => message.t === 'mcp.status' &&
     (message.servers || []).some((server) => server.name === 'fake-notes' && server.state === 'ready')));
@@ -509,8 +584,9 @@ async function main() {
   const settingsReply = uiClient.events.find((message) => message.id === 99 && 'ok' in message);
   check('settings.get redacts upstream tokens', !JSON.stringify(settingsReply).includes(upstreamToken));
   check('settings.get redacts jira secret tokens', !JSON.stringify(settingsReply).includes(jiraSecretToken));
+  check('settings.get redacts honoka env secrets', !JSON.stringify(settingsReply).includes(honokaSecretToken));
   check('settings.get keeps an auth marker', settingsReply?.patch?.mcpUpstreams?.[0]?.auth === 'configured');
-  check('status and logs contain no token', !JSON.stringify(upstreamStatus).includes(upstreamToken) && !JSON.stringify(upstreamStatus).includes(jiraSecretToken) && !mcpLogs.join('\n').includes(upstreamToken) && !mcpLogs.join('\n').includes(jiraSecretToken));
+  check('status and logs contain no token', !JSON.stringify(upstreamStatus).includes(upstreamToken) && !JSON.stringify(upstreamStatus).includes(jiraSecretToken) && !JSON.stringify(upstreamStatus).includes(honokaSecretToken) && !mcpLogs.join('\n').includes(upstreamToken) && !mcpLogs.join('\n').includes(jiraSecretToken) && !mcpLogs.join('\n').includes(honokaSecretToken));
 
   const search = await rpc({
     jsonrpc: '2.0',
@@ -519,9 +595,43 @@ async function main() {
     params: { name: 'notes.search', arguments: { query: 'cat', limit: 5 } }
   }, { session });
   const searchPayload = search.json?.result?.structuredContent;
-  check('notes.search aggregates upstream results', searchPayload?.results?.length === 3, `hits=${searchPayload?.results?.length}`);
+  check('notes.search aggregates upstream results', searchPayload?.results?.length === 4, `hits=${searchPayload?.results?.length}`);
   check('notes.search extracted jira issue correctly', searchPayload?.results?.some((r) => r.source === 'jira' && r.title.includes('PROJ-99') && r.snippet.includes('In Progress')));
-  check('notes.search reports all 3 upstreams healthy', (searchPayload?.sources ?? []).filter((s) => s.state === 'ok').length === 3, JSON.stringify(searchPayload?.sources));
+  check('notes.search reports all 4 upstreams healthy', (searchPayload?.sources ?? []).filter((s) => s.state === 'ok').length === 4, JSON.stringify(searchPayload?.sources));
+  check('notes.search surfaces honoka notes', searchPayload?.results?.some((r) => r.source === 'honoka' && r.title === 'Honoka Joplin note' && r.id === 'joplin_note_1'));
+
+  const honokaOnly = await rpc({
+    jsonrpc: '2.0',
+    id: 81,
+    method: 'tools/call',
+    params: { name: 'notes.search', arguments: { query: '貓', sources: ['honoka'], limit: 5 } }
+  }, { session });
+  const honokaOnlyPayload = honokaOnly.json?.result?.structuredContent;
+  check('notes.search source filter targets honoka', honokaOnlyPayload?.results?.length === 1 && honokaOnlyPayload.results[0].source === 'honoka', JSON.stringify(honokaOnlyPayload?.results));
+
+  // --- pet AI note question routes through honoka search ---------------
+  const askedNotes = await rpc({
+    jsonrpc: '2.0',
+    id: 82,
+    method: 'tools/call',
+    params: { name: 'pet.ask', arguments: { text: '我存過哪些筆記？' } }
+  }, { session });
+  const notesTicket = askedNotes.json?.result?.structuredContent?.ticket;
+  check('pet.ask note question returns a ticket', typeof notesTicket === 'string');
+  let notesPolled = null;
+  for (let i = 0; i < 40; i += 1) {
+    const poll = await rpc({
+      jsonrpc: '2.0',
+      id: 83,
+      method: 'tools/call',
+      params: { name: 'pet.ask.result', arguments: { ticket: notesTicket } }
+    }, { session });
+    notesPolled = poll.json?.result?.structuredContent;
+    if (notesPolled && notesPolled.state !== 'pending') break;
+    await sleep(200);
+  }
+  check('pet AI answers the notes question', notesPolled?.state === 'done' && notesPolled.answer.length > 0, `state=${notesPolled?.state}`);
+  check('pet AI note search includes honoka hits', (notesPolled?.context?.hits ?? 0) >= 1 && (notesPolled?.context?.sources ?? []).includes('honoka'), JSON.stringify(notesPolled?.context));
 
   // --- unknown tool ---------------------------------------------------
   const unknown = await rpc({
