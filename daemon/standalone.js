@@ -13,6 +13,7 @@ const { createBridgeServer } = require('./bridge-server');
 const { createUiServer, DEFAULT_UI_PORT } = require('./ui-server');
 const { createMcpServer, DEFAULT_MCP_PORT } = require('./mcp-server');
 const { createMcpClient } = require('./mcp-client');
+const { createHonokaEventClient, toBubble } = require('./honoka-events');
 
 function packageVersion() {
   try {
@@ -32,11 +33,13 @@ let bridge = null;
 let ui = null;
 let mcp = null;
 let mcpClient = null;
+let honokaEvents = null;
 let shuttingDown = false;
 
 async function shutdown(code = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
+  if (honokaEvents) honokaEvents.stop();
   if (mcpClient) await mcpClient.stop();
   if (mcp) mcp.stop();
   if (ui) ui.stop();
@@ -55,6 +58,17 @@ async function main() {
   });
   bridge.attachMcpClient(mcpClient);
   await mcpClient.start();
+
+  const progressState = new Map();
+  honokaEvents = createHonokaEventClient({
+    configStore: store,
+    onEvent: (event) => {
+      const bubble = toBubble(event, progressState);
+      if (bubble) bridge.say(bubble);
+    }
+  });
+  bridge.attachHonokaEventsClient(honokaEvents);
+  await honokaEvents.start();
 
   ui = createUiServer({ configStore: store, token: bridge.token, bridgePort: bridge.port, port: uiPort, root: appDir });
   await ui.start().catch((error) => console.warn(`aurapet-daemon: ui server unavailable: ${error.message}`));

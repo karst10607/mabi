@@ -22,6 +22,7 @@ const { createConfigStore } = require('../../daemon/config-store.js');
 const { createBridgeServer } = require('../../daemon/bridge-server.js');
 const { createMcpServer, TOOL_NAMES } = require('../../daemon/mcp-server.js');
 const { createMcpClient } = require('../../daemon/mcp-client.js');
+const { createHonokaEventClient, toBubble, normalizeHonokaEvents } = require('../../daemon/honoka-events.js');
 
 const quiet = { info() {}, warn() {} };
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aurapet-mcp-smoke-'));
@@ -97,6 +98,8 @@ let mcpClient = null;
 let upstream = null;
 let bodyClient = null;
 let uiClient = null;
+let honokaEventClient = null;
+let honokaEventsServer = null;
 const mcpLogs = [];
 
 async function rpc(payload, { token = mcpServer.token, origin, session } = {}) {
@@ -363,6 +366,42 @@ rl.on('line', (line) => {
 process.stdin.on('end', () => process.exit(0));
 `);
   return script;
+}
+
+function startFakeHonokaEvents(expectedToken) {
+  const state = { connections: 0, lastEventIds: [], push: null, closeActive: null };
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname !== '/events') {
+      res.writeHead(404).end();
+      return;
+    }
+    if (url.searchParams.get('token') !== expectedToken) {
+      res.writeHead(401).end();
+      return;
+    }
+    state.connections += 1;
+    state.lastEventIds.push(req.headers['last-event-id'] || '');
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+    res.write('retry: 200\n\n');
+    let seq = 0;
+    state.push = (event) => {
+      seq += 1;
+      const id = String(1000 + seq);
+      res.write(`id: ${id}\nevent: ${event.type}\ndata: ${JSON.stringify({ id, ...event })}\n\n`);
+      return id;
+    };
+    state.closeActive = () => res.end();
+  });
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      resolve({
+        url: `http://127.0.0.1:${server.address().port}/events`,
+        state,
+        close: () => new Promise((r) => server.close(r))
+      });
+    });
+  });
 }
 
 async function main() {
@@ -633,6 +672,61 @@ async function main() {
   check('pet AI answers the notes question', notesPolled?.state === 'done' && notesPolled.answer.length > 0, `state=${notesPolled?.state}`);
   check('pet AI note search includes honoka hits', (notesPolled?.context?.hits ?? 0) >= 1 && (notesPolled?.context?.sources ?? []).includes('honoka'), JSON.stringify(notesPolled?.context));
 
+  // --- honoka events SSE → body bubbles (issue #53) ----------------
+  check('honokaEvents config rejects non-loopback http', normalizeHonokaEvents({ url: 'http://example.com/events' }) === null);
+  check('honokaEvents config accepts loopback http', normalizeHonokaEvents({ url: 'http://127.0.0.1:44124/events', token: 'abc' })?.token === 'abc');
+  const honokaEventsToken = 'honoka-sse-token-secret-4242';
+  honokaEventsServer = await startFakeHonokaEvents(honokaEventsToken);
+  store.patch({ honokaEvents: { url: honokaEventsServer.url, token: honokaEventsToken } });
+  const progressState = new Map();
+  honokaEventClient = createHonokaEventClient({
+    configStore: store,
+    log: { info: (m) => mcpLogs.push(String(m)), warn: (m) => mcpLogs.push(String(m)) },
+    backoff: { initial: 100, max: 500, factor: 2 },
+    onEvent: (event) => {
+      const bubble = toBubble(event, progressState);
+      if (bubble) bridge.say(bubble);
+    }
+  });
+  await honokaEventClient.start();
+  await waitFor(() => honokaEventsServer.state.push, 4000);
+  check('honoka events client streams after start', honokaEventsServer.state.connections >= 1);
+
+  honokaEventsServer.state.push({ type: 'url_received', url: 'https://youtu.be/e2e', title: 'E2E Clip' });
+  await waitFor(() => bodyClient.events.some((m) => m.t === 'say' && String(m.text).includes('收到連結') && String(m.text).includes('E2E Clip')), 4000);
+  check('url_received event becomes a body bubble', true);
+
+  honokaEventsServer.state.push({ type: 'download_progress', url: 'https://youtu.be/e2e', progress: 10 });
+  await sleep(300);
+  check('early download progress is suppressed', !bodyClient.events.some((m) => m.t === 'say' && String(m.text).includes('下載中')));
+  honokaEventsServer.state.push({ type: 'download_progress', url: 'https://youtu.be/e2e', progress: 30 });
+  await waitFor(() => bodyClient.events.some((m) => String(m.text || '').includes('下載中 25%')), 4000);
+  check('progress milestone 25% bubbles once', bodyClient.events.filter((m) => String(m.text || '').includes('下載中 25%')).length === 1);
+  honokaEventsServer.state.push({ type: 'download_progress', url: 'https://youtu.be/e2e', progress: 30 });
+  await sleep(300);
+  check('duplicate progress bucket is suppressed', bodyClient.events.filter((m) => String(m.text || '').includes('下載中 25%')).length === 1);
+  honokaEventsServer.state.push({ type: 'download_progress', url: 'https://youtu.be/e2e', progress: 100 });
+  await waitFor(() => bodyClient.events.some((m) => String(m.text || '').includes('下載中 100%')), 4000);
+  check('progress milestone 100% bubbles', true);
+
+  const noteEventId = honokaEventsServer.state.push({ type: 'note_saved', url: 'https://youtu.be/e2e', title: 'E2E Clip', noteId: 'note_x' });
+  await waitFor(() => bodyClient.events.some((m) => String(m.text || '').includes('已存入筆記') && String(m.text).includes('E2E Clip')), 4000);
+  check('note_saved event becomes a body bubble', true);
+
+  honokaEventsServer.state.closeActive();
+  await waitFor(() => honokaEventsServer.state.connections >= 2, 6000);
+  check('reconnect sends Last-Event-ID', honokaEventsServer.state.lastEventIds[1] === noteEventId, `ids=${JSON.stringify(honokaEventsServer.state.lastEventIds)}`);
+  honokaEventsServer.state.push({ type: 'error', url: 'https://youtu.be/e2e', error: 'yt-dlp exited 1' });
+  await waitFor(() => bodyClient.events.some((m) => String(m.text || '').includes('連結處理失敗')), 4000);
+  check('error event becomes a body bubble', true);
+
+  uiClient.socket.send(JSON.stringify({ v: 1, id: 100, t: 'settings.get' }));
+  await waitFor(() => uiClient.events.some((m) => m.id === 100 && 'ok' in m));
+  const honokaConfigReply = uiClient.events.find((m) => m.id === 100 && 'ok' in m);
+  check('settings.get redacts honokaEvents token', !JSON.stringify(honokaConfigReply).includes(honokaEventsToken));
+  check('settings.get keeps honokaEvents auth marker', honokaConfigReply?.patch?.honokaEvents?.auth === 'configured');
+  check('honoka event logs contain no token', !mcpLogs.join('\n').includes(honokaEventsToken));
+
   // --- unknown tool ---------------------------------------------------
   const unknown = await rpc({
     jsonrpc: '2.0',
@@ -659,8 +753,10 @@ main()
     console.error(`not ok - ${error.stack || error.message}`);
   })
   .finally(async () => {
+    if (honokaEventClient) honokaEventClient.stop();
     if (bodyClient) bodyClient.socket.close();
     if (uiClient) uiClient.socket.close();
+    if (honokaEventsServer) await honokaEventsServer.close();
     if (upstream) upstream.close();
     if (mcpClient) await mcpClient.stop();
     if (mcpServer) mcpServer.stop();
