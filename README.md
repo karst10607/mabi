@@ -171,7 +171,20 @@ Joplin 需在設定開啟 Web Clipper（API token 在「Web Clipper → API toke
 其 Joplin 憑證讀自身的 `HONOKA_DIR/.honoka/bridge-settings.json`，不必放進 mabi 設定。
 `notes.search` 會聚合 honoka 的 `search_notes`；`pet.ask` 對「筆記」相關問題會先搜上游筆記、
 把命中結果注入 prompt（ticket 結果附 `context: {hits, sources}`）。token／env 只寫 config，
-不進 log、WS 或 `mcp.status`；`settings.get` 會回傳 `auth: "configured"`／`envKeys` 而不是憑證。重連 backoff 1s→30s，stdio 子進程
+不進 log、WS 或 `mcp.status`；`settings.get` 會回傳 `auth: "configured"`／`envKeys` 而不是憑證。
+
+Honoka 管線事件（Telegram 收連結／下載進度／筆記建立／錯誤）可另設 `honokaEvents` 讓桌寵
+直接冒泡（走既有 `say` 訊息，不加 WS type；進度收斂到 25% 桶、斷線 backoff 並以
+`Last-Event-ID` 補播）：
+
+```jsonc
+{
+  "honokaEvents": {
+    "url": "http://127.0.0.1:44124/events",
+    "token": "<honoka bridgeToken，見 ~/honoka-docs/.honoka/bridge-settings.json>"
+  }
+}
+```重連 backoff 1s→30s，stdio 子進程
 會隨 daemon 停止。驗證：`node tools/mcp/upstream-smoke.mjs --from-joplin`（真實上游
 tools/list＋tools/call，並斷言 token 不外洩）。
 

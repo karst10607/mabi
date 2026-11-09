@@ -2,6 +2,17 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.14.5] - 2026-11-09
+
+### Added
+
+- **Honoka 事件通道（#53）**：
+  - 新 `daemon/honoka-events.js`：訂閱 honoka-publish 的 `/events` SSE（loopback-only、backoff 1s→30s、`Last-Event-ID` 補播），事件轉為既有 WS `say` 氣泡（`url_received`→🔗、`note_saved`→📝、`error`→⚠️、`download_progress` 收斂 25% 桶並去重）。
+  - `standalone.js` 接線；honoka 離線／未設定僅記錄並重試，不影響 daemon（UI 通知可丟棄）。
+  - `settings.get` 對 `honokaEvents.token` 改以 `auth: "configured"` 呈現；`settings.set` 變更時自動 reload。
+  - 冒煙測試：fake SSE server（token 驗證、事件推送、斷線重連 `Last-Event-ID`）＋氣泡轉發＋進度收斂＋token redaction。
+  - README／daemon README 補 `honokaEvents` 設定說明。
+
 ## [1.14.4] - 2026-11-09
 
 ### Added

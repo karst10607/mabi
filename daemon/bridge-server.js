@@ -65,6 +65,7 @@ function createBridgeServer(options = {}) {
   let roamTimer = null;
   let mcpStatus = { enabled: false, port: 0, clients: 0, tools: [] };
   let mcpClient = options.mcpClient || null;
+  let honokaEventsClient = options.honokaEventsClient || null;
   let upstreamStatus = null;
 
   const send = (ws, message) => {
@@ -136,9 +137,18 @@ function createBridgeServer(options = {}) {
     });
   }
 
+  function redactHonokaEvents(config) {
+    if (!config || typeof config !== 'object' || Array.isArray(config)) return config;
+    const { token, ...rest } = config;
+    return { ...rest, ...(token ? { auth: 'configured' } : {}) };
+  }
+
   function redactPatch(patch) {
-    if (!patch || typeof patch !== 'object' || !Object.hasOwn(patch, 'mcpUpstreams')) return patch;
-    return { ...patch, mcpUpstreams: redactUpstreams(patch.mcpUpstreams) };
+    if (!patch || typeof patch !== 'object') return patch;
+    let out = patch;
+    if (Object.hasOwn(out, 'mcpUpstreams')) out = { ...out, mcpUpstreams: redactUpstreams(out.mcpUpstreams) };
+    if (Object.hasOwn(out, 'honokaEvents')) out = { ...out, honokaEvents: redactHonokaEvents(out.honokaEvents) };
+    return out;
   }
 
   function clearRoamTimer() {
@@ -213,6 +223,7 @@ function createBridgeServer(options = {}) {
     delete all.mcpToken;
     delete all.schemaVersion;
     if (Array.isArray(all.mcpUpstreams)) all.mcpUpstreams = redactUpstreams(all.mcpUpstreams);
+    if (all.honokaEvents) all.honokaEvents = redactHonokaEvents(all.honokaEvents);
     return all;
   }
 
@@ -447,6 +458,11 @@ function createBridgeServer(options = {}) {
             toUi('mcp.status', { servers: upstreamServers() });
           }
         }
+        if (msg.patch && Object.hasOwn(msg.patch, 'honokaEvents') && honokaEventsClient) {
+          Promise.resolve(honokaEventsClient.reload()).catch((err) => {
+            log.warn('bridge: honoka events reload failed:', err.message);
+          });
+        }
         return;
       case 'mcp.servers.get':
         if (id != null) reply(ws, id, { servers: upstreamServers() });
@@ -557,6 +573,9 @@ function createBridgeServer(options = {}) {
     attachMcpClient(client) {
       mcpClient = client || null;
       setUpstreamStatus(upstreamServers());
+    },
+    attachHonokaEventsClient(client) {
+      honokaEventsClient = client || null;
     },
     setRoamEnabled(enabled) {
       return setRoamEnabled(enabled);

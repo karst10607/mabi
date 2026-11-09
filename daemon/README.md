@@ -107,6 +107,28 @@ stub Streamable HTTP upstream and stub stdio upstream (no external services):
 node tools/mcp/smoke-test.mjs
 ```
 
+## Honoka event bubbles (issue #53)
+
+Honoka pipeline events reach the pet through the existing `say` bubble
+message — no WS protocol additions:
+
+```jsonc
+{
+  "honokaEvents": {
+    "url": "http://127.0.0.1:44124/events",
+    "token": "<honoka bridgeToken from ~/honoka-docs/.honoka/bridge-settings.json>"
+  }
+}
+```
+
+- `honoka-events.js` subscribes to the SSE stream, reconnects with exponential
+  backoff (1s→30s) and sends `Last-Event-ID` so missed frames replay.
+- Bubbles: `url_received` → 🔗, `note_saved` → 📝, `error` → ⚠️, and
+  `download_progress` collapsed to 25% buckets (duplicates suppressed).
+- Honoka offline or unconfigured is not an error: events may be dropped
+  (UI notification only), the daemon keeps running.
+- Tokens are redacted from `settings.get` (`auth: "configured"`) and logs.
+
 ## MCP client face (issue #13)
 
 `mcp-client.js` is the daemon's MCP **client**. `mcpUpstreams` (0600 config)
