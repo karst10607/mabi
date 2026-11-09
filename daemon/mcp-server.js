@@ -25,6 +25,7 @@ const MAX_BODY_BYTES = 256 * 1024;
 const ASK_TTL_MS = 15 * 60 * 1000;
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const MAX_TEXT = 4000;
+const NOTE_INTENT_PATTERN = /(筆記|記事|記過|存過|收藏|notes?\b|note\b|saved)/i;
 
 function packageVersion() {
   try {
@@ -258,28 +259,60 @@ function createMcpServer(options = {}) {
     if (!text || text.length > MAX_TEXT) return textResult({ ok: false, error: `text must be 1..${MAX_TEXT} chars` }, true);
     prune();
     const ticket = crypto.randomBytes(8).toString('hex');
-    const record = { ticket, state: 'pending', createdAt: Date.now(), answer: '', error: '' };
+    const record = { ticket, state: 'pending', createdAt: Date.now(), answer: '', error: '', context: null };
     tickets.set(ticket, record);
     const ai = makeAi();
     let partial = '';
-    ai.streamChat(
-      [{ role: 'user', content: text }],
-      (chunk) => {
-        partial = chunk;
-      },
-      () => {
-        record.state = 'done';
-        record.answer = partial;
-      },
-      (error) => {
-        record.state = 'error';
-        record.error = String(error || 'unknown error');
-      }
-    ).catch((error) => {
+    // Run search + chat off the request path so the ticket is returned immediately.
+    (async () => {
+      const messages = await withNoteContext(text, record);
+      await ai.streamChat(
+        messages,
+        (chunk) => {
+          partial = chunk;
+        },
+        () => {
+          record.state = 'done';
+          record.answer = partial;
+        },
+        (error) => {
+          record.state = 'error';
+          record.error = String(error || 'unknown error');
+        }
+      );
+    })().catch((error) => {
       record.state = 'error';
       record.error = error.message;
     });
     return textResult({ ticket, state: 'pending' });
+  }
+
+  /**
+   * Note questions ("我存過哪些筆記") are answered with upstream MCP search
+   * results injected as a system message. Best-effort and bounded by the MCP
+   * client's search budget; the hit count lands on the ticket for debugging.
+   */
+  async function withNoteContext(text, record) {
+    const messages = [{ role: 'user', content: text }];
+    if (!mcpClient || !NOTE_INTENT_PATTERN.test(text)) return messages;
+    try {
+      const found = await mcpClient.search(text, { limit: 5 });
+      const hits = (found.results || []).slice(0, 5);
+      record.context = { hits: hits.length, sources: [...new Set(hits.map((hit) => hit.source))] };
+      if (hits.length > 0) {
+        const lines = hits.map((hit) => {
+          const snippet = hit.snippet ? ` — ${String(hit.snippet).replace(/\s+/g, ' ').slice(0, 160)}` : '';
+          return `- [${hit.source}] ${hit.title || '(untitled)'}${snippet}`;
+        });
+        messages.unshift({
+          role: 'system',
+          content: `以下是上游筆記 MCP 的搜尋結果，回答主人時請優先引用：\n${lines.join('\n')}`
+        });
+      }
+    } catch {
+      record.context = { hits: 0, sources: [], error: 'search failed' };
+    }
+    return messages;
   }
 
   function toolAskResult(args) {
@@ -289,6 +322,7 @@ function createMcpServer(options = {}) {
     return textResult({
       ticket: record.ticket,
       state: record.state,
+      ...(record.context ? { context: record.context } : {}),
       ...(record.state === 'done' ? { answer: record.answer } : {}),
       ...(record.state === 'error' ? { error: record.error } : {})
     });
