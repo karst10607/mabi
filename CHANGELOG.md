@@ -2,6 +2,16 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.14.7] - 2026-11-10
+
+### Added
+
+- **獨立隨選影音下載 MCP 工具 `tools/mcp/yt-dlp-mcp.mjs`（#61, ADR 0002）**：
+  - 新增標準 stdio MCP 伺服器 `tools/mcp/yt-dlp-mcp.mjs`（平時 0 MB 常駐記憶體，按需由 `mcpUpstreams` 或外部 AI 客戶端喚醒）。
+  - 暴露 `video.download`（支援 YouTube、Facebook、Instagram Reels/Posts、X/Twitter、Bilibili、TikTok；支援 `cookiesFromBrowser`、`format` `mp4`/`mp3`、`maxHeight`、`maxSizeMB`）、`video.info` 與 `video.status` 三個工具。
+  - `tools/mcp/smoke-test.mjs` 新增 `media` (`yt-dlp-mcp.mjs`) 端到端冒煙測試（驗證 `video.status`、`video.info`、`video.download` 與 `--cookies-from-browser` 參數傳遞）。
+  - `docs/adr/0002-unified-daemon-and-media-mcp.md` 正式記錄跨平台單一 Daemon 收斂與隨選影音 MCP 解耦邊界（#60）。
+
 ## [1.14.6] - 2026-11-09
 
 ### Docs
