@@ -128,15 +128,17 @@ flowchart TD
    - **Phase 2**：遵循 `pet-profile.json` 共享格式實現寵物外觀與紀念日同步。
    - **Phase 3**：未來僅允許透過 Godot 獨立擴充包（`.pck`）形式動態載入靈園 2.5D 箱庭空間。
 
-### 8.1 Honoka 邊界（honoka-publish）
+### 8.1 資訊收集 Bridge 與隨選影音 MCP 邊界（ADR 0002）
 
-整合細節見 **[docs/honoka-integration.md](docs/honoka-integration.md)**（架構圖、設定、驗證、故障排除）。
+架構演進詳見 **[ADR 0002: 跨平台單一 Daemon 收斂策略與隨選影音 MCP (yt-dlp) 解耦邊界](docs/adr/0002-unified-daemon-and-media-mcp.md)** 及 **[docs/honoka-integration.md](docs/honoka-integration.md)**。
 
-- **獨立 repo／獨立 daemon**：`karst10607/honoka-publish` 是唯一 owner —— yt-dlp 下載、Chromium 截圖、Joplin／Notion／AnyType 寫入都只由它執行。mabi **不得 import** honoka 程式碼，也不得把兩者合成 monorepo。
-- **只走兩個標準面**：
-  - **MCP（pull）**：`mcpUpstreams` 以 stdio 接 honoka MCP（`save_url`／`download_video`／`search_notes`／`list_inbox`／`get_job_status`），工具名 `honoka.<tool>`。
-  - **事件（push）**：`honokaEvents` 訂閱 honoka `GET /events`（SSE），經既有 WS `say` 顯示氣泡；**不新增 WS 訊息 type**（additive-only，需變更時先更新 `docs/ws-protocol.md`）。
-- **憑證邊界**：honoka 的 Joplin/Telegram token 只在其 `HONOKA_DIR/.honoka/bridge-settings.json`（0600）；mabi 只持有 honoka `bridgeToken`（存於 `honokaEvents.token`），`settings.get` 一律 redact（`auth: "configured"`）。
-- **事件 payload 不含 token／筆記內文**（僅 URL／標題／狀態）；桌寵離線可丟棄事件，不佇列轟炸。
-- **程序分離**：可在 honoka 端用 `honoka-launch` 拉起桌寵（detached child），但不得共享 runtime 或生命周期。
+- **純 JS 資訊收集內建至 `mabi` 常駐 Daemon**：
+  - 移除 Playwright / Chromium 整頁截圖強依賴後，純文字網頁擷取（HTML→Markdown）、Joplin Clipper 寫入與本地 Inbox 歸檔直接內建於 `daemon/url-ingest.js`，隨 `aurapet-daemon`（Node SEA）跨平台單檔打包，不再強制依賴外部常駐 `honoka-bridge.service`。
+  - **嚴禁在 `daemon/` 引入 `playwright`、`puppeteer`、`jsdom` 等巨型或原生二進位依賴**，確保常駐記憶體維持 ~100MB。
+- **影音下載（YT / FB / IG / X）獨立為隨選 stdio MCP（`tools/mcp/yt-dlp-mcp.mjs`）**：
+  - 呼叫 `yt-dlp` 下載影片屬於偶發批次 I/O 任務，獨立放置於 `tools/mcp/yt-dlp-mcp.mjs`（不打包進常駐 `aurapet-daemon`），平時 0 MB 常駐記憶體，由 MCP Client（`mcpUpstreams` / Antigravity / Cursor / Qoder）按需透過 `stdio` 喚醒、載完即關。
+- **向下相容既有 `honoka-publish` 通道**：
+  - **MCP（pull）**：`mcpUpstreams` 仍可掛載 `tools/mcp/yt-dlp-mcp.mjs`、`jira` 或既有 `honoka-publish` stdio MCP。
+  - **事件（push）**：`honokaEvents` 仍保留訂閱外部 SSE（`GET /events`）並經既有 WS `say` 顯示氣泡之能力；設定檔與日誌一律 redact 憑證（`auth: "configured"`）。
+
 
