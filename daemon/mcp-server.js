@@ -16,6 +16,7 @@ const crypto = require('crypto');
 const http = require('http');
 const AIService = require('./ai-service');
 const { normalizeUpstreams } = require('./mcp-client');
+const { ingestUrl } = require('./url-ingest');
 
 const DEFAULT_MCP_PORT = 47822;
 const DEFAULT_PATH = '/mcp';
@@ -112,6 +113,20 @@ const TOOLS = [
         }
       },
       required: ['query'],
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'notes.save_url',
+    description: 'Built-in pure-JS URL ingestion (no Playwright): extracts article HTML to Markdown and archives to Joplin Clipper REST API or local Inbox, emitting pet speech bubbles. Video URLs delegate to upstream yt-dlp MCP when configured.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', minLength: 4, maxLength: 2048, description: 'Article or video URL to archive' },
+        title: { type: 'string', maxLength: 300, description: 'Optional custom title override' },
+        cookiesFromBrowser: { type: 'string', maxLength: 32, description: 'Optional browser name for video URL cookies (chrome, firefox, edge)' }
+      },
+      required: ['url'],
       additionalProperties: false
     }
   },
@@ -344,6 +359,25 @@ function createMcpServer(options = {}) {
     return textResult(await mcpClient.search(query, { limit, sources: wanted }));
   }
 
+  async function toolNotesSaveUrl(args) {
+    const url = typeof args.url === 'string' ? args.url.trim() : '';
+    if (!url || !/^https?:\/\//i.test(url)) {
+      return textResult({ ok: false, error: 'url must be a valid http(s) URL' }, true);
+    }
+    const result = await ingestUrl(url, {
+      title: typeof args.title === 'string' ? args.title.trim() : undefined,
+      cookiesFromBrowser: typeof args.cookiesFromBrowser === 'string' ? args.cookiesFromBrowser.trim() : undefined,
+      configStore,
+      mcpClient,
+      onBubble: (text) => {
+        if (text && bridge && typeof bridge.say === 'function') {
+          bridge.say({ text });
+        }
+      }
+    });
+    return textResult(result, !result.ok);
+  }
+
   async function toolHtopSummary(args) {
     const sysinfo = require('./sysinfo');
     const topCount = Number.isInteger(args.topCount) && args.topCount >= 1 && args.topCount <= 50 ? args.topCount : 10;
@@ -363,6 +397,8 @@ function createMcpServer(options = {}) {
         return toolAskResult(args);
       case 'notes.search':
         return toolNotesSearch(args);
+      case 'notes.save_url':
+        return toolNotesSaveUrl(args);
       case 'system.htop_summary':
         return toolHtopSummary(args);
       default:

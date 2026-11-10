@@ -416,7 +416,7 @@ check('preload keeps the renderer electronAPI surface', () => {
 });
 
 check('mcp server face declares the implemented tools (issue #14)', () => {
-  const expected = ['pet.say', 'pet.mood.get', 'pet.ask', 'pet.ask.result', 'notes.search', 'system.htop_summary'];
+  const expected = ['pet.say', 'pet.mood.get', 'pet.ask', 'pet.ask.result', 'notes.search', 'notes.save_url', 'system.htop_summary'];
   assert(JSON.stringify(TOOL_NAMES) === JSON.stringify(expected), `daemon/mcp-server.js exposes ${TOOL_NAMES.join(', ')}`);
   const fixture = fixtures['mcp.server.status'][0].msg;
   assert(JSON.stringify(fixture.tools) === JSON.stringify(expected), 'mcp.server.status fixture tools differ from daemon');

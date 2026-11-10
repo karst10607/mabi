@@ -148,6 +148,10 @@ function createBridgeServer(options = {}) {
     let out = patch;
     if (Object.hasOwn(out, 'mcpUpstreams')) out = { ...out, mcpUpstreams: redactUpstreams(out.mcpUpstreams) };
     if (Object.hasOwn(out, 'honokaEvents')) out = { ...out, honokaEvents: redactHonokaEvents(out.honokaEvents) };
+    if (Object.hasOwn(out, 'joplinToken')) {
+      const { joplinToken, ...rest } = out;
+      out = { ...rest, ...(joplinToken ? { joplinAuth: 'configured' } : {}) };
+    }
     return out;
   }
 
@@ -222,6 +226,10 @@ function createBridgeServer(options = {}) {
     delete all.bridgeToken;
     delete all.mcpToken;
     delete all.schemaVersion;
+    if (all.joplinToken) {
+      delete all.joplinToken;
+      all.joplinAuth = 'configured';
+    }
     if (Array.isArray(all.mcpUpstreams)) all.mcpUpstreams = redactUpstreams(all.mcpUpstreams);
     if (all.honokaEvents) all.honokaEvents = redactHonokaEvents(all.honokaEvents);
     return all;

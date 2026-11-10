@@ -809,6 +809,80 @@ async function main() {
   check('settings.get keeps honokaEvents auth marker', honokaConfigReply?.patch?.honokaEvents?.auth === 'configured');
   check('honoka event logs contain no token', !mcpLogs.join('\n').includes(honokaEventsToken));
 
+  // --- built-in notes.save_url (pure-JS URL ingest, issue #62) ---------
+  const savedJoplinNotes = [];
+  const articleServer = await new Promise((resolve) => {
+    const srv = http.createServer((req, res) => {
+      const u = new URL(req.url, 'http://127.0.0.1');
+      if (u.pathname === '/article') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end('<!doctype html><html><head><meta property="og:title" content="Pure JS Bridge Guide"></head><body><article><h1>Pure JS Bridge</h1><p>Zero Playwright overhead with <strong>clean</strong> Markdown.</p></article></body></html>');
+        return;
+      }
+      if (u.pathname === '/notes' && req.method === 'POST') {
+        let raw = '';
+        req.on('data', (c) => { raw += c; });
+        req.on('end', () => {
+          savedJoplinNotes.push({ token: u.searchParams.get('token'), body: JSON.parse(raw) });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ id: 'joplin_builtin_1' }));
+        });
+        return;
+      }
+      res.writeHead(404).end();
+    });
+    srv.listen(0, '127.0.0.1', () => resolve(srv));
+  });
+  const articleBase = `http://127.0.0.1:${articleServer.address().port}`;
+  const inboxDir = path.join(root, 'inbox-builtin');
+
+  try {
+    // 1. Save to local Inbox when Joplin is not configured
+    store.patch({ inboxDir });
+    const inboxSave = await rpc({
+      jsonrpc: '2.0',
+      id: 101,
+      method: 'tools/call',
+      params: { name: 'notes.save_url', arguments: { url: `${articleBase}/article` } }
+    }, { session });
+    const inboxPayload = inboxSave.json?.result?.structuredContent;
+    check('notes.save_url extracts HTML to Markdown and writes to local Inbox', inboxPayload?.ok === true && inboxPayload?.storage === 'inbox' && inboxPayload?.title === 'Pure JS Bridge Guide' && fs.existsSync(inboxPayload.inboxPath));
+    const inboxContent = fs.readFileSync(inboxPayload.inboxPath, 'utf8');
+    check('notes.save_url converts HTML headings and strong tags to Markdown', inboxContent.includes('# Pure JS Bridge') && inboxContent.includes('**clean** Markdown.'));
+    await waitFor(() => bodyClient.events.some((m) => m.t === 'say' && String(m.text).includes('Pure JS Bridge Guide')), 4000);
+    check('notes.save_url triggers pet speech bubble on save', true);
+
+    // 2. Save directly to Joplin Clipper REST API when configured
+    const joplinDirectSecret = 'joplin-clipper-secret-token-888';
+    store.patch({ joplinApiUrl: articleBase, joplinToken: joplinDirectSecret, joplinNotebookId: 'nb_1' });
+    const joplinSave = await rpc({
+      jsonrpc: '2.0',
+      id: 102,
+      method: 'tools/call',
+      params: { name: 'notes.save_url', arguments: { url: `${articleBase}/article` } }
+    }, { session });
+    const joplinPayload = joplinSave.json?.result?.structuredContent;
+    check('notes.save_url saves article to Joplin Clipper REST API', joplinPayload?.ok === true && joplinPayload?.storage === 'joplin' && joplinPayload?.noteId === 'joplin_builtin_1' && savedJoplinNotes.length === 1);
+
+    // 3. Delegate video URL to mounted media.video.download upstream
+    const videoSave = await rpc({
+      jsonrpc: '2.0',
+      id: 103,
+      method: 'tools/call',
+      params: { name: 'notes.save_url', arguments: { url: 'https://www.facebook.com/watch/?v=987654', title: 'FB Cat Video', cookiesFromBrowser: 'chrome' } }
+    }, { session });
+    const videoPayload = videoSave.json?.result?.structuredContent;
+    check('notes.save_url delegates video URL to yt-dlp-mcp upstream and archives note', videoPayload?.ok === true && videoPayload?.kind === 'video' && fs.existsSync(videoPayload?.filePath));
+
+    // 4. Verify joplinToken is redacted in settings.get
+    uiClient.socket.send(JSON.stringify({ v: 1, id: 104, t: 'settings.get' }));
+    await waitFor(() => uiClient.events.some((m) => m.id === 104 && 'ok' in m));
+    const joplinConfigReply = uiClient.events.find((m) => m.id === 104 && 'ok' in m);
+    check('settings.get redacts joplinToken and sets joplinAuth marker', !JSON.stringify(joplinConfigReply).includes(joplinDirectSecret) && joplinConfigReply?.patch?.joplinAuth === 'configured');
+  } finally {
+    articleServer.close();
+  }
+
   // --- unknown tool ---------------------------------------------------
   const unknown = await rpc({
     jsonrpc: '2.0',
