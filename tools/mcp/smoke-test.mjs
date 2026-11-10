@@ -15,6 +15,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { WebSocket } from 'ws';
 
 const require = createRequire(import.meta.url);
@@ -368,6 +369,50 @@ process.stdin.on('end', () => process.exit(0));
   return script;
 }
 
+function writeFakeYtDlpBin() {
+  const binPath = path.join(root, 'fake-yt-dlp');
+  const logFile = path.join(root, 'yt-dlp-invocations.jsonl');
+  const script = `#!/usr/bin/env node
+'use strict';
+const fs = require('fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(logFile)}, JSON.stringify(args) + '\\n');
+if (args.includes('--version')) {
+  process.stdout.write('2026.11.01\\n');
+  process.exit(0);
+}
+if (args.includes('--dump-single-json')) {
+  const url = args[args.length - 1];
+  process.stdout.write(JSON.stringify({
+    id: 'reel_999',
+    title: 'Cute Cat Reel',
+    uploader: 'catlover',
+    duration: 15,
+    webpage_url: url,
+    thumbnail: 'https://example.com/thumb.jpg',
+    extractor: 'Instagram'
+  }) + '\\n');
+  process.exit(0);
+}
+const outIdx = args.indexOf('-o');
+if (outIdx !== -1 && args[outIdx + 1]) {
+  const pattern = args[outIdx + 1];
+  const isMp3 = args.includes('mp3');
+  const filePath = pattern
+    .replace('%(title).80s', 'Cute_Cat_Clip')
+    .replace('%(ext)s', isMp3 ? 'mp3' : 'mp4');
+  process.stdout.write('[download]  50.0% of 1.00MiB\\n');
+  process.stdout.write('[download] 100.0% of 1.00MiB\\n');
+  fs.writeFileSync(filePath, Buffer.alloc(2048, 0x42));
+  process.exit(0);
+}
+process.exit(1);
+`;
+  fs.writeFileSync(binPath, script, { mode: 0o755 });
+  return { binPath, logFile };
+}
+
+
 function startFakeHonokaEvents(expectedToken) {
   const state = { connections: 0, lastEventIds: [], push: null, closeActive: null };
   const server = http.createServer((req, res) => {
@@ -561,6 +606,9 @@ async function main() {
   const stdioScript = writeFakeStdioServer();
   const jiraScript = writeFakeJiraServer();
   const honokaScript = writeFakeHonokaServer();
+  const { binPath: fakeYtDlpBin, logFile: ytDlpLogFile } = writeFakeYtDlpBin();
+  const ytDlpMcpScript = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'yt-dlp-mcp.mjs');
+  const videoOutDir = path.join(root, 'videos');
   const upstreamToken = 'smoke-upstream-token-value';
   const jiraSecretToken = 'super-secret-jira-token-9999';
   const honokaSecretToken = 'honoka-joplin-token-secret-777';
@@ -588,6 +636,16 @@ async function main() {
           HONOKA_DIR: path.join(root, 'honoka-docs'),
           HONOKA_JOPLIN_TOKEN: honokaSecretToken
         }
+      },
+      {
+        name: 'media',
+        transport: 'stdio',
+        command: process.execPath,
+        args: [ytDlpMcpScript],
+        env: {
+          YTDLP_BIN: fakeYtDlpBin,
+          YTDLP_OUTPUT_DIR: videoOutDir
+        }
       }
     ]
   });
@@ -599,10 +657,12 @@ async function main() {
   check('jira upstream reaches ready', upstreamStatus.find((s) => s.name === 'jira')?.state === 'ready');
   check('status reports real tool counts', upstreamStatus.find((s) => s.name === 'jira')?.toolCount === 2, JSON.stringify(upstreamStatus.map((s) => ({ name: s.name, tools: s.toolCount }))));
   check('honoka upstream reaches ready with its tools', upstreamStatus.find((s) => s.name === 'honoka')?.state === 'ready' && upstreamStatus.find((s) => s.name === 'honoka')?.toolCount === 5);
+  check('media (yt-dlp-mcp) upstream reaches ready with 3 tools', upstreamStatus.find((s) => s.name === 'media')?.state === 'ready' && upstreamStatus.find((s) => s.name === 'media')?.toolCount === 3);
 
   const namespaced = mcpClient.getTools().map((tool) => tool.name);
   check('tools are namespaced <server>.<tool>', namespaced.includes('fake-notes.search_notes') && namespaced.includes('stdio-notes.search_notes') && namespaced.includes('jira.jira_search') && namespaced.includes('jira.get_issue'), namespaced.join(', '));
   check('honoka tools are namespaced too', namespaced.includes('honoka.search_notes') && namespaced.includes('honoka.save_url') && namespaced.includes('honoka.get_job_status'));
+  check('yt-dlp-mcp tools are namespaced as media.video.*', namespaced.includes('media.video.download') && namespaced.includes('media.video.info') && namespaced.includes('media.video.status'));
   const directCall = await mcpClient.callTool('fake-notes.search_notes', { query: 'cat' });
   check('namespaced tools/call succeeds', directCall?.content?.[0]?.type === 'text');
   const directJiraCall = await mcpClient.callTool('jira.jira_search', { jql: 'project = PROJ' });
@@ -611,6 +671,28 @@ async function main() {
   check('honoka save_url returns a job ticket', honokaTicket?.content?.[0]?.text?.includes('job_mock_1'));
   const honokaJob = await mcpClient.callTool('honoka.get_job_status', { ticketId: 'job_mock_1' });
   check('honoka get_job_status reaches done', honokaJob?.content?.[0]?.text?.includes('"done"'));
+
+  const mediaStatusRes = await mcpClient.callTool('media.video.status', {});
+  const mediaStatusPayload = JSON.parse(mediaStatusRes?.content?.[0]?.text || '{}');
+  check('yt-dlp-mcp video.status reports binary available and version', mediaStatusPayload.ok === true && mediaStatusPayload.available === true && mediaStatusPayload.version === '2026.11.01');
+
+  const mediaInfoRes = await mcpClient.callTool('media.video.info', {
+    url: 'https://www.instagram.com/reel/abc123/',
+    cookiesFromBrowser: 'firefox'
+  });
+  const mediaInfoPayload = JSON.parse(mediaInfoRes?.content?.[0]?.text || '{}');
+  check('yt-dlp-mcp video.info extracts Instagram Reel metadata', mediaInfoPayload.ok === true && mediaInfoPayload.platform === 'instagram' && mediaInfoPayload.title === 'Cute Cat Reel');
+
+  const mediaDlRes = await mcpClient.callTool('media.video.download', {
+    url: 'https://x.com/catlover/status/1234567890',
+    cookiesFromBrowser: 'chrome',
+    maxHeight: 1080
+  });
+  const mediaDlPayload = JSON.parse(mediaDlRes?.content?.[0]?.text || '{}');
+  check('yt-dlp-mcp video.download saves X video with cookiesFromBrowser', mediaDlPayload.ok === true && mediaDlPayload.platform === 'x' && mediaDlPayload.cookiesUsed === true && fs.existsSync(mediaDlPayload.filePath));
+  const ytDlpInvocations = fs.readFileSync(ytDlpLogFile, 'utf8');
+  check('yt-dlp-mcp passes --cookies-from-browser and height limit to yt-dlp', ytDlpInvocations.includes('"--cookies-from-browser","chrome"') && ytDlpInvocations.includes('height<=1080'));
+
 
   await waitFor(() => uiClient.events.some((message) => message.t === 'mcp.status' &&
     (message.servers || []).some((server) => server.name === 'fake-notes' && server.state === 'ready')));

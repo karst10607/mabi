@@ -156,7 +156,12 @@ lists servers:
         "JIRA_EMAIL": "your-email@example.com",
         "JIRA_API_TOKEN": "<api-token>"
       }
-    }
+    },
+    // On-demand video downloader MCP over stdio (ADR 0002 / issue #61):
+    // video.download, video.info, video.status for YT / FB / IG / X
+    { "name": "media", "transport": "stdio",
+      "command": "node", "args": ["/path/to/mabi/tools/mcp/yt-dlp-mcp.mjs"],
+      "env": { "YTDLP_OUTPUT_DIR": "/home/<user>/Downloads/Videos" } }
   ]
 }
 ```
