@@ -1,13 +1,21 @@
-# Honoka × AuraPet 整合指南
+# Honoka × AuraPet 整合指南（含 ADR 0002 單一 Daemon 收斂架構）
 
-> 上層：#46（已收尾）。邊界規範：[AGENTS.md §8.1](../AGENTS.md#81-honoka-邊界honoka-publish)。
-> Honoka 端：`karst10607/honoka-publish`（README：功能、SSE、MCP tools、launcher）。
+> **架構更新（[ADR 0002](adr/0002-unified-daemon-and-media-mcp.md)）**：
+> 1. **常駐 Daemon 收斂**：移除 Playwright 截圖強依賴後，純 JS 網頁文章擷取（HTML→Markdown）與 Joplin／本地 Inbox 歸檔已直接內建於 `mabi` 的跨平台常駐 Daemon（`daemon/url-ingest.js` / MCP `notes.save_url`），不再強制要求額外常駐 `honoka-bridge.service`。
+> 2. **隨選影音下載（YT / FB / IG / X）**：`yt-dlp` 影片下載獨立為 `tools/mcp/yt-dlp-mcp.mjs`（stdio MCP），平時 0 MB 記憶體不常駐，需要載片時才由 MCP Client 按需喚醒。
+> 3. **向下相容**：以下說明保留既有 `karst10607/honoka-publish` 外部掛載（`mcpUpstreams` + `honokaEvents` SSE）之完整相容配置。
 
-## 架構
+## 架構（ADR 0002 推薦模式 vs. 傳統外部模式）
 
 ```
+[ADR 0002 單一常駐 Daemon 模式]
+MCP clients / 使用者 ──► AuraPet daemon (127.0.0.1:47822/mcp)
+                            ├─ 內建 notes.save_url (純 JS HTML→MD + Joplin / Inbox) ──► bridge.say 氣泡
+                            └─ mcpUpstreams (stdio, 按需喚醒) ──► tools/mcp/yt-dlp-mcp.mjs (YT/FB/IG/X 影片下載)
+
+[傳統外部 honoka-publish 相容模式]
 Telegram / Discord ──► honoka-publish daemon ──┬─ yt-dlp 影片下載
-MCP clients（Antigravity…）──stdio MCP───────►│─ Chromium 整頁截圖
+MCP clients（Antigravity…）──stdio MCP───────►│─ Chromium 整頁截圖 (選用)
                                               ├─ Joplin 筆記（Clipper REST）
                                               ├─ 事件 GET /events（SSE, token）
                                               └─ MCP stdio tools
@@ -15,10 +23,11 @@ AuraPet daemon ──mcpUpstreams(stdio)──► honoka.<tool>（pull）
 AuraPet daemon ──honokaEvents(SSE)────► bridge.say ──► Godot body 氣泡（push）
 ```
 
-- **單一 owner**：只有 honoka 寫 Joplin／影片／截圖；mabi 不 import honoka 程式碼（見 AGENTS.md §8.1）。
+- **常駐輕量邊界（ADR 0002）**：`mabi/daemon/` 僅內建純 JS 資訊收集與筆記歸檔，嚴禁引入 Playwright/Chromium；`yt-dlp` 獨立於 `tools/mcp/yt-dlp-mcp.mjs` 隨選呼叫。
 - **MCP 是 pull**：AI/agent 主動呼叫工具；server 不能喚醒 AI。
-- **事件是 push**：honoka 管線事件 → SSE → mabi daemon → 既有 WS `say` → 氣泡；不經 LLM、不加新 WS type。
-- **程序分離**：honoka 可用 `honoka-launch` 拉起桌寵（detached child），但不共享 runtime。
+- **事件是 push**：內建擷取或外部 SSE 事件 → mabi daemon → 既有 WS `say` → 氣泡；不經 LLM、不加新 WS type。
+- **程序分離**：`yt-dlp-mcp.mjs` 為隨選 stdio 子行程，載完即退；傳統 `honoka-launch` 亦可拉起桌寵（detached child）。
+
 
 ## 設定步驟
 
@@ -111,10 +120,11 @@ curl -s http://127.0.0.1:47821/... 經 MCP 工具 notes.search / pet.ask
 | MCP 工具沒列出 | `mcpUpstreams` 的 `command`／`args` 路徑；`HONOKA_DIR` env；`mcp.servers.get` 狀態 |
 | 401／403 | bridge 需 `Authorization: Bearer <bridgeToken>`；SSE/EventSource 用 `?token=`；CORS 只允許 `bridgeAllowedOrigins` |
 
-## 邊界規則（摘要）
+## 邊界規則（摘要，詳見 ADR 0002）
 
-1. 禁 monorepo／禁 import：honoka 與 mabi 只靠 MCP＋SSE 通訊。
-2. WS 協議 additive-only：事件复用 `say`，要新增 type 先改 `docs/ws-protocol.md`。
-3. Payload 不含 token／筆記內文（只有 URL／標題／狀態）。
-4. 桌寵離線時事件可丟棄（UI 通知非關鍵路徑）。
-5. 版本／release 一律人工批准（agent 只做 patch 版號＋CHANGELOG）。
+1. **禁止引入巨型二進位依賴進常駐 Daemon**：`mabi/daemon/` 僅允許純 JS 模組（如內建 `url-ingest.js`），嚴禁引入 Playwright / Chromium / JSDOM。
+2. **外部二進位工具隨選化**：`yt-dlp` 影音下載獨立於 `tools/mcp/yt-dlp-mcp.mjs`（stdio MCP，平時不常駐）。
+3. **WS 協議 additive-only**：事件复用 `say`，要新增 type 先改 `docs/ws-protocol.md`。
+4. **Payload 不含 token／筆記內文**（只有 URL／標題／狀態）；桌寵離線時事件可丟棄（UI 通知非關鍵路徑）。
+5. **版本／release 一律人工批准**（agent 只做 patch 版號＋CHANGELOG）。
+
