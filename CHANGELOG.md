@@ -2,6 +2,16 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.14.8] - 2026-11-10
+
+### Added
+
+- **內建無 Playwright 純 JS 網頁擷取與筆記歸檔模組 `daemon/url-ingest.js`（#62, ADR 0002）**：
+  - 新增零外部重型依賴的 `daemon/url-ingest.js`（HTML→Markdown 結構化轉換、Joplin Clipper REST API 寫入、本地 Markdown Inbox 自動降級備援、影音網址自動委派上游 `yt-dlp-mcp.mjs`）。
+  - `daemon/mcp-server.js` 新增內建工具 `notes.save_url`，處理過程自動連動桌寵 `say` 氣泡（`🔗 收到連結`、`📝 已存入筆記`、`⚠️ 連結處理失敗`）。
+  - `daemon/bridge-server.js` 對 `joplinToken` 實作 `joplinAuth: "configured"` 憑證遮罩保護。
+  - `tools/mcp/smoke-test.mjs` 新增 6 項 `notes.save_url` 端到端測試（共 75 項 smoke tests + 16 項 contract tests）。
+
 ## [1.14.7] - 2026-11-10
 
 ### Added
