@@ -15,6 +15,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { WebSocket } from 'ws';
 
 const require = createRequire(import.meta.url);
@@ -606,7 +607,7 @@ async function main() {
   const jiraScript = writeFakeJiraServer();
   const honokaScript = writeFakeHonokaServer();
   const { binPath: fakeYtDlpBin, logFile: ytDlpLogFile } = writeFakeYtDlpBin();
-  const ytDlpMcpScript = path.resolve(path.dirname(new URL(import.meta.url).pathname), 'yt-dlp-mcp.mjs');
+  const ytDlpMcpScript = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'yt-dlp-mcp.mjs');
   const videoOutDir = path.join(root, 'videos');
   const upstreamToken = 'smoke-upstream-token-value';
   const jiraSecretToken = 'super-secret-jira-token-9999';
