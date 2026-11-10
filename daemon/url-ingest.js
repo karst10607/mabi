@@ -292,7 +292,8 @@ async function ingestUrl(rawUrl, options = {}) {
   try {
     if (kind === 'video' && mcpClient && typeof mcpClient.getTools === 'function') {
       const tools = mcpClient.getTools();
-      const dlTool = tools.find((t) => t.name.endsWith('.video.download') || t.name.endsWith('.download_video'));
+      const dlTool = tools.find((t) => t.name.endsWith('.video.download'))
+        || tools.find((t) => t.name.endsWith('.download_video'));
       if (dlTool) {
         const dlRes = await mcpClient.callTool(dlTool.name, {
           url,
