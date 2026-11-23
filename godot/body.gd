@@ -103,6 +103,7 @@ func _ready() -> void:
 	get_tree().root.transparent_bg = true
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_TRANSPARENT, true)
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
+	DisplayServer.screen_set_keep_on(false)
 	_parse_args()
 	_load_app_settings()
 	if shot_path != "":
