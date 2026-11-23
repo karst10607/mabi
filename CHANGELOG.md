@@ -2,6 +2,14 @@
 
 所有重要變更都記在這裡。版本遵循 [Semantic Versioning](https://semver.org/)，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)。
 
+## [1.14.9] - 2026-11-23
+
+### Fixed
+
+- **解除 Godot 渲染核心預設禁止螢幕與系統休眠問題（#66）**：
+  - 於 `godot/project.godot` 的 `[display]` 區段顯式設定 `window/energy_saving/keep_screen_on=false`，並於 `godot/body.gd` `_ready()` 呼叫 `DisplayServer.screen_set_keep_on(false)`。
+  - 修正 Linux（D-Bus `org.gnome.SessionManager` `GSM_INHIBITOR_FLAG_IDLE`）與 Windows（Win32 `SetThreadExecutionState`）在背景運行桌寵時阻擋螢幕自動變暗、鎖屏後熄滅與系統休眠的問題。
+
 ## [1.14.8] - 2026-11-10
 
 ### Added
